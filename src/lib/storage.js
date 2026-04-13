@@ -20,7 +20,6 @@ export async function storeActivities(data) {
   if (hasBlobStorage()) {
     const { put } = await import("@vercel/blob");
     await put(BLOB_KEY, JSON.stringify(data), {
-      access: "public",
       addRandomSuffix: false,
     });
     return { storage: "blob" };
@@ -44,7 +43,9 @@ export async function getActivities() {
       const { blobs } = await list({ prefix: BLOB_KEY.replace(".json", "") });
       const blob = blobs.find(b => b.pathname === BLOB_KEY);
       if (!blob) return null;
-      const resp = await fetch(blob.url);
+      // Use downloadUrl for private stores, fallback to url for public
+      const fetchUrl = blob.downloadUrl || blob.url;
+      const resp = await fetch(fetchUrl);
       return await resp.json();
     } catch (e) {
       console.error("Blob read error:", e);
@@ -71,7 +72,6 @@ export async function storeSyncMeta(meta) {
   if (hasBlobStorage()) {
     const { put } = await import("@vercel/blob");
     await put(SYNC_META_KEY, JSON.stringify(meta), {
-      access: "public",
       addRandomSuffix: false,
     });
     return;
@@ -94,7 +94,8 @@ export async function getSyncMeta() {
       const { blobs } = await list({ prefix: SYNC_META_KEY.replace(".json", "") });
       const blob = blobs.find(b => b.pathname === SYNC_META_KEY);
       if (!blob) return null;
-      const resp = await fetch(blob.url);
+      const fetchUrl = blob.downloadUrl || blob.url;
+      const resp = await fetch(fetchUrl);
       return await resp.json();
     } catch {
       return null;
