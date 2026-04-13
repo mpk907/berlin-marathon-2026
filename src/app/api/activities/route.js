@@ -37,7 +37,8 @@ export async function GET() {
 }
 
 /**
- * Merge synced weekly data with plan targets from trainingPlan
+ * Merge synced weekly data with plan targets from trainingPlan.
+ * Includes plan target for every week, not just weeks with actuals.
  */
 function mergeWithPlan(weeklyData, plan) {
   const planMap = {};

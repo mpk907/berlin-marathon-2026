@@ -288,8 +288,9 @@ export function processActivities(activities) {
         return m + s / 60;
       });
       const avg = paceVals.reduce((a, b) => a + b, 0) / paceVals.length;
-      const pm = Math.floor(avg);
-      const ps = Math.round((avg - pm) * 60);
+      let pm = Math.floor(avg);
+      let ps = Math.round((avg - pm) * 60);
+      if (ps >= 60) { pm++; ps = 0; }
       avgPaceStr = `${pm}:${String(ps).padStart(2, "0")}`;
     }
 

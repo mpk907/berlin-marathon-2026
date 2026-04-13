@@ -89,6 +89,15 @@ export default function Dashboard() {
   const [dataSource, setDataSource] = useState("static");
   const [syncedAt, setSyncedAt] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState(null);
+
+  // ═══ Dynamic current week from today's date ═══
+  const currentWeek = useMemo(() => {
+    const week1Start = new Date(2026, 0, 5); // Mon Jan 5 2026
+    const now = new Date();
+    const diffDays = Math.floor((now - week1Start) / 86400000);
+    return Math.max(1, Math.min(38, Math.floor(diffDays / 7) + 1));
+  }, []);
 
   useEffect(() => {
     fetch("/api/activities")
@@ -108,11 +117,12 @@ export default function Dashboard() {
 
   const triggerSync = useCallback(async () => {
     setSyncing(true);
+    setSyncError(null);
     try {
       const res = await fetch("/api/sync", { method: "POST" });
       const result = await res.json();
       if (result.status === "success") {
-        // Reload data
+        // Reload data from the activities API (which uses synced-data.js)
         const data = await fetch("/api/activities").then(r => r.json());
         if (data.weeklyData?.length > 0) {
           setWeeklyData(data.weeklyData);
@@ -120,14 +130,19 @@ export default function Dashboard() {
           setDataSource(data.source);
           setSyncedAt(data.syncedAt);
         }
+        setSyncError(null);
+      } else if (result.status === "error") {
+        setSyncError(result.message || "Sync failed — check WHOOP token");
       }
     } catch (e) {
       console.error("Sync failed:", e);
+      setSyncError("Could not reach sync API");
     }
     setSyncing(false);
   }, []);
 
-  const futureWeeks = useMemo(() => trainingPlan.filter(w => w.week > weeklyData.length).map(w => ({ week: w.week, plan: w.total })), [trainingPlan, weeklyData]);
+  const maxActualWeek = useMemo(() => weeklyData.length > 0 ? Math.max(...weeklyData.map(w => w.week)) : 0, [weeklyData]);
+  const futureWeeks = useMemo(() => trainingPlan.filter(w => w.week > maxActualWeek).map(w => ({ week: w.week, plan: w.total })), [trainingPlan, maxActualWeek]);
 
   const stats = useMemo(() => {
     const completed = weeklyData;
@@ -135,26 +150,25 @@ export default function Dashboard() {
     const totalFB = completed.reduce((s, w) => s + (w.football || 0), 0);
     const totalSpin = completed.reduce((s, w) => s + (w.spin || 0), 0);
     const totalAll = totalRun + totalFB + totalSpin;
-    const totalPlan = completed.reduce((s, w) => s + w.plan, 0);
+    const totalPlan = completed.reduce((s, w) => s + (w.plan || 0), 0);
     const longRuns = completed.map(w => w.longRun).filter(x => x > 0);
     const longestRun = Math.max(...longRuns, 0);
-    // Last completed week volume (not average — shows current fitness, not diluted by early weeks)
     const lastWeek = completed[completed.length - 1];
     const lastWeekKm = lastWeek ? (lastWeek.run || 0) + (lastWeek.football || 0) + (lastWeek.spin || 0) : 0;
-    const weeksToRace = 24;
+
+    // Dynamic weeks to race
+    const raceDate = new Date(2026, 8, 28); // Sep 28 2026
+    const now = new Date();
+    const weeksToRace = Math.max(0, Math.ceil((raceDate - now) / (7 * 86400000)));
+
     const consistency = completed.filter(w => (w.run || 0) + (w.football || 0) + (w.spin || 0) > 5).length;
 
-    // Updated realistic projections
-    // Optimistic: ~6:25/km → 4:30 (perfect training from here)
-    // Target: ~6:45/km → 4:45 (good training, some missed weeks)
-    // Conservative: ~7:05/km → 5:00 (current trajectory)
-    const conservativeMin = (7 + 5/60) * 42.195;   // 7:05/km
-    const targetMin = (6 + 45/60) * 42.195;        // 6:45/km
-    const optimisticMin = (6 + 25/60) * 42.195;    // 6:25/km
+    const conservativeMin = (7 + 5/60) * 42.195;
+    const targetMin = (6 + 45/60) * 42.195;
+    const optimisticMin = (6 + 25/60) * 42.195;
 
     const fmt = (m) => `${Math.floor(m/60)}:${String(Math.round(m%60)).padStart(2,"0")}`;
 
-    // Last pace for KPI
     const lastPace = lastWeek?.avgPace || null;
 
     return {
@@ -164,14 +178,20 @@ export default function Dashboard() {
       projOptimistic: fmt(optimisticMin),
       completed: completed.length,
     };
-  }, []);
+  }, [weeklyData]);
 
   const chartData = useMemo(() => {
-    return weeklyData.map(w => ({
+    // Combine actual weeks + future plan-only weeks for the plan line
+    const actualWeeks = weeklyData.map(w => ({
       ...w,
       actual: (w.run || 0) + (w.football || 0) + (w.spin || 0),
     }));
-  }, []);
+    const maxWeek = actualWeeks.length > 0 ? Math.max(...actualWeeks.map(w => w.week)) : 0;
+    const futurePlanWeeks = trainingPlan
+      .filter(w => w.week > maxWeek)
+      .map(w => ({ week: w.week, dates: w.dates, run: 0, football: 0, spin: 0, plan: w.total, longRun: 0, avgHR: 0, z2: 0, avgPace: null, actual: 0 }));
+    return [...actualWeeks, ...futurePlanWeeks];
+  }, [weeklyData, trainingPlan]);
 
   // Pace progression — convert "7:41" strings to decimal minutes for charting
   const paceData = useMemo(() => {
@@ -184,20 +204,20 @@ export default function Dashboard() {
         pace: toMin(w.avgPace),
         paceLabel: w.avgPace,
       }));
-  }, []);
+  }, [weeklyData]);
 
   const longRunProjection = useMemo(() => {
     const data = weeklyData.filter(w => w.longRun && w.longRun > 0).map(w => ({ week: w.week, km: w.longRun }));
     const lastLong = data.length ? data[data.length - 1] : { week: 14, km: 13.5 };
     const targetWeek = 31;
     const targetKm = 32;
-    const weeksLeft = targetWeek - lastLong.week;
+    const weeksLeft = Math.max(1, targetWeek - lastLong.week);
     const increment = (targetKm - lastLong.km) / weeksLeft;
     for (let w = lastLong.week + 1; w <= targetWeek; w++) {
       data.push({ week: w, km: null, projected: Math.min(lastLong.km + increment * (w - lastLong.week), targetKm) });
     }
     return data;
-  }, []);
+  }, [weeklyData]);
 
   // Zone 2 trend — include ALL weeks with data (not just z2 > 0)
   const z2TrendData = useMemo(() => {
@@ -207,7 +227,7 @@ export default function Dashboard() {
       z2: w.z2,
       z2pct: Math.round(w.z2 * 100),
     }));
-  }, []);
+  }, [weeklyData]);
 
   // ═══ NEXT TRAINING — find the next non-rest session from today ═══
   const nextTraining = useMemo(() => {
@@ -253,14 +273,13 @@ export default function Dashboard() {
       return { when, dateStr, dayName, session, detail, week: wk, weekNotes: weekPlan.notes };
     }
     return null;
-  }, []);
+  }, [trainingPlan]);
 
   const filteredPlan = useMemo(() => {
-    const currentWeek = 15;
     if (planView === "upcoming") return trainingPlan.filter(w => w.week >= currentWeek - 1 && w.week <= currentWeek + 5);
     if (planView === "past") return trainingPlan.filter(w => w.week <= currentWeek);
     return trainingPlan;
-  }, [planView]);
+  }, [planView, currentWeek, trainingPlan]);
 
   const tabs = [
     { id: "overview", label: "Overview" },
@@ -310,6 +329,11 @@ export default function Dashboard() {
             {syncing ? "Syncing..." : "Sync WHOOP"}
           </button>
         </div>
+        {syncError && (
+          <div className="mt-2 px-3 py-2 bg-red-900/40 border border-red-700/50 rounded-lg text-xs text-red-300">
+            {syncError}
+          </div>
+        )}
       </div>
 
       {/* ═══ NEXT TRAINING — hero card ═══ */}
@@ -540,9 +564,9 @@ export default function Dashboard() {
                   </thead>
                   <tbody>
                     {filteredPlan.map(w => {
-                      const isPast = w.week < 15;
-                      const isCurrent = w.week === 15;
-                      const isFuture = w.week >= 15;
+                      const isPast = w.week < currentWeek;
+                      const isCurrent = w.week === currentWeek;
+                      const isFuture = w.week >= currentWeek;
                       const actuals = weeklyActuals[w.week] || {};
                       const weekData = weeklyData.find(wd => wd.week === w.week);
                       const actualTotal = weekData ? (weekData.run || 0) + (weekData.football || 0) + (weekData.spin || 0) : null;

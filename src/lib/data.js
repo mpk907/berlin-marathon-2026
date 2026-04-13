@@ -98,6 +98,18 @@ export const trainingPlan = [
     detail: { tue: {km:4,type:"shakeout",hr:"Z1 < 127",pace:"8:00 gentle"}, thu: {km:3,type:"easy",hr:"Z1 < 120",pace:"8:30+ very easy"}, sun: {km:42.2,type:"RACE",hr:"Z2-Z3: start 6:40, hold 6:30",pace:"Start conservative, negative split"}} },
 ];
 
+// Auto-fix: recompute week totals from daily sessions to ensure consistency
+function parseSessionKm(session) {
+  if (!session || session === "Rest" || session.includes("✈️") || session === "Match" || session === "LAST MATCH") return 0;
+  const match = session.match(/^(\d+\.?\d*)/);
+  return match ? parseFloat(match[1]) : 0;
+}
+const daySlots = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+for (const week of trainingPlan) {
+  const computed = daySlots.reduce((sum, d) => sum + parseSessionKm(week[d]), 0);
+  if (computed > 0) week.total = Math.round(computed * 10) / 10;
+}
+
 // Actuals per day for completed weeks (from Activity Log)
 export const weeklyActuals = {
   2:  { sat: "🏃4.5", sun: "🏃3.1" },

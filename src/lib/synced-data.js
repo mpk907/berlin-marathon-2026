@@ -15,7 +15,7 @@ export const syncedWeeklyData = [
   {"week":9,"dates":"02 Mar-08 Mar","run":13.3,"football":0,"spin":0,"plan":0,"longRun":8,"avgHR":148,"z2":0.29,"avgPace":"7:29"},
   {"week":10,"dates":"09 Mar-15 Mar","run":10.4,"football":14.2,"spin":0,"plan":0,"longRun":5.7,"avgHR":129,"z2":0.57,"avgPace":"7:49"},
   {"week":11,"dates":"16 Mar-22 Mar","run":10.2,"football":0,"spin":0,"plan":0,"longRun":10.2,"avgHR":119,"z2":0.22,"avgPace":"8:20"},
-  {"week":12,"dates":"23 Mar-29 Mar","run":19.7,"football":0,"spin":0,"plan":0,"longRun":10,"avgHR":139,"z2":0.68,"avgPace":"7:60"},
+  {"week":12,"dates":"23 Mar-29 Mar","run":19.7,"football":0,"spin":0,"plan":0,"longRun":10,"avgHR":139,"z2":0.68,"avgPace":"8:00"},
   {"week":13,"dates":"30 Mar-05 Apr","run":17.3,"football":0,"spin":9,"plan":0,"longRun":11.7,"avgHR":131,"z2":0.69,"avgPace":"8:01"},
   {"week":14,"dates":"06 Apr-12 Apr","run":13.5,"football":0,"spin":52.5,"plan":0,"longRun":13.5,"avgHR":128,"z2":0.93,"avgPace":"7:49"},
 ];
