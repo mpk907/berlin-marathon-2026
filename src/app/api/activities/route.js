@@ -1,29 +1,26 @@
 // ═══════════════════════════════════════════
 // Activities API Route
 // GET /api/activities — returns synced weekly data + actuals
-// Falls back to static data.js if no synced data exists
+// Uses synced-data.js (from WHOOP sync) or falls back to static data.js
 // ═══════════════════════════════════════════
 
 import { NextResponse } from "next/server";
-import { getActivities } from "@/lib/storage";
+import { syncedWeeklyData, syncedWeeklyActuals, syncMeta } from "@/lib/synced-data";
 import { weeklyData as staticWeeklyData, weeklyActuals as staticWeeklyActuals, trainingPlan, hrZones } from "@/lib/data";
 
 export async function GET() {
-  // Try to load synced data from storage
-  const synced = await getActivities();
-
-  if (synced && synced.weeklyData && synced.weeklyData.length > 0) {
-    // Merge synced weeklyData with training plan targets
-    const mergedWeekly = mergeWithPlan(synced.weeklyData, trainingPlan);
+  // Use synced WHOOP data if available
+  if (syncedWeeklyData && syncedWeeklyData.length > 0) {
+    const mergedWeekly = mergeWithPlan(syncedWeeklyData, trainingPlan);
 
     return NextResponse.json({
       source: "whoop",
-      syncedAt: synced.syncedAt,
+      syncedAt: syncMeta.syncedAt,
       weeklyData: mergedWeekly,
-      weeklyActuals: synced.weeklyActuals,
+      weeklyActuals: syncedWeeklyActuals,
       trainingPlan,
       hrZones,
-      activitiesCount: synced.activities?.length || 0,
+      activitiesCount: syncMeta.activitiesCount,
     });
   }
 
