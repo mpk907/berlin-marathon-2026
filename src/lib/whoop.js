@@ -262,8 +262,8 @@ export function processActivities(activities) {
     const runKm = runs.reduce((s, a) => s + a.distance, 0);
     // Football equiv: 0.11 km/min (from project spec)
     const footballEquiv = football.reduce((s, a) => s + a.duration * 0.11, 0);
-    // Spin: use distance if available, else ~0.5 km/min equiv
-    const spinKm = spin.reduce((s, a) => s + (a.distance > 0 ? a.distance : a.duration * 0.5), 0);
+    // Spin: use distance if available, else ~0.25 km/min equiv (~15 km/h indoor cycling)
+    const spinKm = spin.reduce((s, a) => s + (a.distance > 0 ? a.distance : a.duration * 0.25), 0);
 
     const longRun = runs.length > 0
       ? Math.max(...runs.map(a => a.distance))
@@ -322,7 +322,7 @@ export function processActivities(activities) {
     for (const act of acts) {
       const dow = dayKeys[new Date(act.date).getUTCDay()];
       if (!dayMap[dow]) dayMap[dow] = [];
-      const emoji = act.type === "Run" ? "🏃" : act.type === "Football" ? "⚽" : "🚴";
+      const emoji = act.type === "Run" ? "🏃" : act.type === "Football" ? "⚽" : act.type === "Spin" ? "🚴" : "💪";
       if (act.distance > 0.5) {
         dayMap[dow].push(`${emoji}${act.distance.toFixed(1)}`);
       } else {

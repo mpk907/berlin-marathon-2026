@@ -11,15 +11,15 @@ export const weeklyData = [
   { week: 3, dates: "19-25 Jan", run: 9.2, football: 0, spin: 15.0, plan: 18, longRun: 4.0, avgHR: 139, z2: 0.16, avgPace: "7:35" },
   { week: 4, dates: "26 Jan-1 Feb", run: 30.2, football: 0, spin: 0, plan: 14, longRun: 8.1, avgHR: 138, z2: 0.37, avgPace: "7:31" },
   { week: 5, dates: "02-08 Feb", run: 15.5, football: 0, spin: 0, plan: 20, longRun: 6.2, avgHR: 138, z2: 0.55, avgPace: "7:41" },
-  { week: 6, dates: "09-15 Feb", run: 1.9, football: 0, spin: 6.8, plan: 22, longRun: 1.9, avgHR: 134, z2: 0.37, avgPace: "7:41" },
+  { week: 6, dates: "09-15 Feb", run: 1.9, football: 0, spin: 11.3, plan: 22, longRun: 1.9, avgHR: 134, z2: 0.37, avgPace: "7:41" },
   { week: 7, dates: "16-22 Feb", run: 15.3, football: 0, spin: 0, plan: 24, longRun: 6.2, avgHR: 142, z2: 0.34, avgPace: "7:36" },
   { week: 8, dates: "23 Feb-1 Mar", run: 2.6, football: 0, spin: 0, plan: 18, longRun: 2.6, avgHR: 136, z2: 0.73, avgPace: "7:32" },
   { week: 9, dates: "02-08 Mar", run: 13.3, football: 0, spin: 0, plan: 26, longRun: 8.0, avgHR: 148, z2: 0.29, avgPace: "7:29" },
   { week: 10, dates: "09-15 Mar", run: 10.4, football: 14.2, spin: 0, plan: 28, longRun: 5.7, avgHR: 144, z2: 0.58, avgPace: "7:50" },
   { week: 11, dates: "16-22 Mar", run: 10.2, football: 0, spin: 0, plan: 30, longRun: 10.2, avgHR: 149, z2: 0.22, avgPace: "8:20" },
   { week: 12, dates: "23-29 Mar", run: 19.7, football: 0, spin: 0, plan: 22, longRun: 10.0, avgHR: 139, z2: 0.68, avgPace: "8:00" },
-  { week: 13, dates: "30 Mar-5 Apr", run: 17.4, football: 11.8, spin: 2.7, plan: 32, longRun: 11.8, avgHR: 143, z2: 0.69, avgPace: "8:10" },
-  { week: 14, dates: "06-12 Apr", run: 13.5, football: 6.6, spin: 15.8, plan: 35, longRun: 13.5, avgHR: 140, z2: 0.93, avgPace: "7:49" },
+  { week: 13, dates: "30 Mar-5 Apr", run: 17.4, football: 11.8, spin: 4.5, plan: 32, longRun: 11.8, avgHR: 143, z2: 0.69, avgPace: "8:10" },
+  { week: 14, dates: "06-12 Apr", run: 13.5, football: 6.6, spin: 26.3, plan: 35, longRun: 13.5, avgHR: 140, z2: 0.93, avgPace: "7:49" },
 ];
 
 // HR zones (based on Max's data: max HR ~182, resting ~55)
