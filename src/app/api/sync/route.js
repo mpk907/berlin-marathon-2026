@@ -15,7 +15,7 @@ export async function GET(request) {
   const isCron = searchParams.get("cron") === "1";
 
   if (isCron) {
-    return runSync();
+    return runSync(null);
   }
 
   // Regular GET: return sync status
@@ -30,25 +30,36 @@ export async function GET(request) {
   });
 }
 
-export async function POST() {
-  return runSync();
+export async function POST(request) {
+  // Accept access token directly in POST body (for browser-initiated sync)
+  let bodyToken = null;
+  try {
+    const body = await request.json();
+    bodyToken = body?.accessToken || null;
+  } catch (e) {
+    // No JSON body — that's fine, we'll use env vars
+  }
+  return runSync(bodyToken);
 }
 
-async function runSync() {
+async function runSync(bodyToken = null) {
   const refreshToken = process.env.WHOOP_REFRESH_TOKEN;
   const envAccessToken = process.env.WHOOP_ACCESS_TOKEN;
 
-  if (!refreshToken && !envAccessToken) {
+  if (!refreshToken && !envAccessToken && !bodyToken) {
     return NextResponse.json({
       status: "error",
-      message: "WHOOP_ACCESS_TOKEN or WHOOP_REFRESH_TOKEN not set. Add in Vercel → Settings → Environment Variables.",
+      message: "No WHOOP token available. Pass accessToken in POST body, or set WHOOP_ACCESS_TOKEN env var.",
     }, { status: 400 });
   }
 
   try {
-    // 1. Get access token — try direct token first, then refresh
+    // 1. Get access token — try body token first, then env, then refresh
     let accessToken;
-    if (envAccessToken) {
+    if (bodyToken) {
+      console.log("[sync] Using access token from POST body...");
+      accessToken = bodyToken;
+    } else if (envAccessToken) {
       console.log("[sync] Using WHOOP_ACCESS_TOKEN from env...");
       accessToken = envAccessToken;
     } else {
