@@ -8,6 +8,23 @@ import { NextResponse } from "next/server";
 import { refreshAccessToken, fetchActivities, processActivities } from "@/lib/whoop";
 import { storeActivities, storeSyncMeta, getSyncMeta } from "@/lib/storage";
 
+// CORS headers for cross-origin sync requests (e.g. from WHOOP tab)
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders });
+}
+
+// Helper to add CORS headers to any response
+function withCors(response) {
+  Object.entries(corsHeaders).forEach(([k, v]) => response.headers.set(k, v));
+  return response;
+}
+
 // Vercel cron calls GET, so we sync on both GET and POST
 // But only sync on GET if ?cron=1 is present (from vercel.json)
 export async function GET(request) {
@@ -20,14 +37,14 @@ export async function GET(request) {
 
   // Regular GET: return sync status
   const meta = await getSyncMeta();
-  return NextResponse.json({
+  return withCors(NextResponse.json({
     status: "ok",
     lastSync: meta?.lastSync || null,
     activitiesCount: meta?.activitiesCount || 0,
     weeksWithData: meta?.weeksWithData || 0,
     storage: process.env.BLOB_READ_WRITE_TOKEN ? "blob" : "local",
     configured: !!(process.env.WHOOP_REFRESH_TOKEN || process.env.WHOOP_ACCESS_TOKEN),
-  });
+  }));
 }
 
 export async function POST(request) {
@@ -47,10 +64,10 @@ async function runSync(bodyToken = null) {
   const envAccessToken = process.env.WHOOP_ACCESS_TOKEN;
 
   if (!refreshToken && !envAccessToken && !bodyToken) {
-    return NextResponse.json({
+    return withCors(NextResponse.json({
       status: "error",
       message: "No WHOOP token available. Pass accessToken in POST body, or set WHOOP_ACCESS_TOKEN env var.",
-    }, { status: 400 });
+    }, { status: 400 }));
   }
 
   try {
@@ -103,7 +120,7 @@ async function runSync(bodyToken = null) {
     };
     await storeSyncMeta(meta);
 
-    return NextResponse.json({
+    return withCors(NextResponse.json({
       status: "success",
       ...meta,
       sample: activities.slice(-3).map(a => ({
@@ -113,21 +130,21 @@ async function runSync(bodyToken = null) {
         pace: a.pace,
         avgHr: a.avgHr,
       })),
-    });
+    }));
   } catch (error) {
     console.error("[sync] Error:", error);
 
     if (error.message === "TOKEN_EXPIRED") {
-      return NextResponse.json({
+      return withCors(NextResponse.json({
         status: "error",
         message: "WHOOP token expired and refresh failed. Update WHOOP_REFRESH_TOKEN in env vars.",
         help: "Open app.whoop.com → F12 → Application → Cookies → copy cognito refresh token",
-      }, { status: 401 });
+      }, { status: 401 }));
     }
 
-    return NextResponse.json({
+    return withCors(NextResponse.json({
       status: "error",
       message: error.message,
-    }, { status: 500 });
+    }, { status: 500 }));
   }
 }
