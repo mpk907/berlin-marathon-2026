@@ -6,7 +6,6 @@
 
 import { NextResponse } from "next/server";
 import { refreshAccessToken, fetchActivities, processActivities } from "@/lib/whoop";
-import { storeActivities, storeSyncMeta, getSyncMeta } from "@/lib/storage";
 
 // CORS headers for cross-origin sync requests (e.g. from WHOOP tab)
 const corsHeaders = {
@@ -36,13 +35,8 @@ export async function GET(request) {
   }
 
   // Regular GET: return sync status
-  const meta = await getSyncMeta();
   return withCors(NextResponse.json({
     status: "ok",
-    lastSync: meta?.lastSync || null,
-    activitiesCount: meta?.activitiesCount || 0,
-    weeksWithData: meta?.weeksWithData || 0,
-    storage: process.env.BLOB_READ_WRITE_TOKEN ? "blob" : "local",
     configured: !!(process.env.WHOOP_REFRESH_TOKEN || process.env.WHOOP_ACCESS_TOKEN),
   }));
 }
@@ -97,39 +91,21 @@ async function runSync(bodyToken = null) {
     const { weeklyData, weeklyActuals } = processActivities(activities);
     console.log(`[sync] Processed ${weeklyData.length} weeks with data`);
 
-    // 4. Store everything
-    const stored = await storeActivities({
-      activities,
-      weeklyData,
-      weeklyActuals,
+    // 4. Return all data directly (no Blob storage needed)
+    return withCors(NextResponse.json({
+      status: "success",
       syncedAt: new Date().toISOString(),
-    });
-
-    // 5. Store sync metadata
-    const meta = {
-      lastSync: new Date().toISOString(),
       activitiesCount: activities.length,
       weeksWithData: weeklyData.length,
-      storage: stored.storage,
       breakdown: {
         runs: activities.filter(a => a.type === "Run").length,
         football: activities.filter(a => a.type === "Football").length,
         spin: activities.filter(a => a.type === "Spin").length,
         other: activities.filter(a => a.type === "Other").length,
       },
-    };
-    await storeSyncMeta(meta);
-
-    return withCors(NextResponse.json({
-      status: "success",
-      ...meta,
-      sample: activities.slice(-3).map(a => ({
-        date: a.date,
-        type: a.type,
-        distance: a.distance,
-        pace: a.pace,
-        avgHr: a.avgHr,
-      })),
+      weeklyData,
+      weeklyActuals,
+      activities,
     }));
   } catch (error) {
     console.error("[sync] Error:", error);
