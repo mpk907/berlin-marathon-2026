@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Area } from "recharts";
 import {
   weeklyData as staticWeeklyData,
@@ -103,18 +103,18 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetch("/api/activities")
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); })
       .then(data => {
-        if (data.weeklyData && data.weeklyData.length > 0) {
+        if (data && data.weeklyData && data.weeklyData.length > 0) {
           setWeeklyData(data.weeklyData);
-          setDataSource(data.source);
+          setDataSource(data.source || "api");
           setSyncedAt(data.syncedAt);
         }
-        if (data.weeklyActuals) setWeeklyActuals(data.weeklyActuals);
-        if (data.trainingPlan) setTrainingPlan(data.trainingPlan);
-        if (data.hrZones) setHrZones(data.hrZones);
+        if (data && data.weeklyActuals) setWeeklyActuals(data.weeklyActuals);
+        if (data && data.trainingPlan) setTrainingPlan(data.trainingPlan);
+        if (data && data.hrZones) setHrZones(data.hrZones);
       })
-      .catch(() => {}); // Static fallback is already loaded
+      .catch((err) => { console.warn("Activities API fallback to static:", err.message); }); // Static fallback is already loaded
   }, []);
 
   const triggerSync = useCallback(async (token) => {
@@ -206,7 +206,7 @@ export default function Dashboard() {
 
   // Pace progression — convert "7:41" strings to decimal minutes for charting
   const paceData = useMemo(() => {
-    const toMin = (s) => { if (!s) return null; const [m, sec] = s.split(":").map(Number); return m + sec / 60; };
+    const toMin = (s) => { if (!s) return null; const parts = s.split(":").map(Number); if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return null; return parts[0] + parts[1] / 60; };
     return weeklyData
       .filter(w => w.avgPace)
       .map(w => ({
@@ -446,9 +446,9 @@ export default function Dashboard() {
           <KPI label="Total Volume" value={`${stats.totalAll.toFixed(0)} km`} sub={`🏃${stats.totalRun.toFixed(0)} ⚽${stats.totalFB.toFixed(0)} 🚴${stats.totalSpin.toFixed(0)}`} />
           <KPI label="Last Week" value={`${stats.lastWeekKm.toFixed(1)} km`} sub={`Plan: ${stats.lastWeekPlan} km`} color={stats.lastWeekKm >= stats.lastWeekPlan * 0.8 ? "text-emerald-600" : "text-amber-600"} />
           <KPI label="Longest Run" value={`${stats.longestRun.toFixed(1)} km`} sub="Target: 32 km by Week 31" color={stats.longestRun >= 20 ? "text-emerald-600" : "text-amber-600"} />
-          <KPI label="Consistency" value={`${Math.round(stats.consistency / stats.completed * 100)}%`} sub={`${stats.consistency}/${stats.completed} weeks > 5km`} color={stats.consistency / stats.completed >= 0.8 ? "text-emerald-600" : "text-amber-600"} />
+          <KPI label="Consistency" value={`${stats.completed > 0 ? Math.round(stats.consistency / stats.completed * 100) : 0}%`} sub={`${stats.consistency}/${stats.completed} weeks > 5km`} color={stats.completed > 0 && stats.consistency / stats.completed >= 0.8 ? "text-emerald-600" : "text-amber-600"} />
           <KPI label="Last Pace" value={stats.lastPace || "—"} sub="min/km · target race: 6:45" color="text-purple-600" />
-          <KPI label="Plan Adherence" value={`${Math.round(stats.totalAll / stats.totalPlan * 100)}%`} sub={`${stats.totalAll.toFixed(0)} / ${stats.totalPlan} km`} color={stats.totalAll / stats.totalPlan >= 0.7 ? "text-emerald-600" : "text-red-600"} />
+          <KPI label="Plan Adherence" value={`${stats.totalPlan > 0 ? Math.round(stats.totalAll / stats.totalPlan * 100) : 0}%`} sub={`${stats.totalAll.toFixed(0)} / ${stats.totalPlan} km`} color={stats.totalPlan > 0 && stats.totalAll / stats.totalPlan >= 0.7 ? "text-emerald-600" : "text-red-600"} />
         </div>
       </div>
 
@@ -609,8 +609,8 @@ export default function Dashboard() {
                       const detail = w.detail || {};
 
                       return (
-                        <>
-                          <tr key={w.week}
+                        <React.Fragment key={w.week}>
+                          <tr
                             className={`border-b border-slate-50 cursor-pointer ${isCurrent ? "bg-blue-50" : isPast ? "bg-white" : w.notes?.includes("EASE") ? "bg-amber-50/30" : w.notes?.includes("TAPER") ? "bg-green-50/30" : w.notes?.includes("PEAK") ? "bg-red-50/30" : "bg-white"} hover:bg-slate-50`}
                             onClick={() => setExpandedWeek(isExpanded ? null : w.week)}>
                             <td className={`px-3 py-2 font-bold ${isCurrent ? "text-blue-700" : "text-slate-700"}`}>
@@ -651,7 +651,7 @@ export default function Dashboard() {
                           </tr>
                           {/* Expanded detail row showing HR/pace guidance */}
                           {isExpanded && w.detail && (
-                            <tr key={`${w.week}-detail`} className="bg-slate-50">
+                            <tr className="bg-slate-50">
                               <td colSpan={11} className="px-6 py-3">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                   {Object.entries(w.detail).map(([day, d]) => (
@@ -689,7 +689,7 @@ export default function Dashboard() {
                               </td>
                             </tr>
                           )}
-                        </>
+                        </React.Fragment>
                       );
                     })}
                   </tbody>

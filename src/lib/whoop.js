@@ -11,7 +11,7 @@ const CLIENT_ID = "37365lrcda1js3fapqfe2n40eh"; // WHOOP web app client ID
 // v2_activity type string → our tracker Type
 const TYPE_MAP = {
   "running": "Run", "trail-running": "Run", "treadmill-running": "Run",
-  "soccer": "Football", "football": "Football",
+  "soccer": "Football", "football": "Football", "futsal": "Football",
   "cycling": "Spin", "spinning": "Spin", "spin": "Spin",
   "mountain-biking": "Spin", "indoor-cycling": "Spin",
 };
