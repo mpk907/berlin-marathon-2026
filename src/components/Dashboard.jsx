@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Area } from "recharts";
-import { weeklyData, hrZones, trainingPlan, weeklyActuals } from "@/lib/data";
-
-const futureWeeks = trainingPlan.filter(w => w.week > 14).map(w => ({ week: w.week, plan: w.total }));
+import {
+  weeklyData as staticWeeklyData,
+  hrZones as staticHrZones,
+  trainingPlan as staticTrainingPlan,
+  weeklyActuals as staticWeeklyActuals,
+} from "@/lib/data";
 
 const KPI = ({ label, value, sub, color = "text-slate-800" }) => (
   <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
@@ -77,6 +80,54 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("overview");
   const [planView, setPlanView] = useState("upcoming");
   const [expandedWeek, setExpandedWeek] = useState(null);
+
+  // ═══ LIVE DATA: fetch from API, fall back to static ═══
+  const [weeklyData, setWeeklyData] = useState(staticWeeklyData);
+  const [trainingPlan, setTrainingPlan] = useState(staticTrainingPlan);
+  const [weeklyActuals, setWeeklyActuals] = useState(staticWeeklyActuals);
+  const [hrZones, setHrZones] = useState(staticHrZones);
+  const [dataSource, setDataSource] = useState("static");
+  const [syncedAt, setSyncedAt] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/activities")
+      .then(r => r.json())
+      .then(data => {
+        if (data.weeklyData && data.weeklyData.length > 0) {
+          setWeeklyData(data.weeklyData);
+          setDataSource(data.source);
+          setSyncedAt(data.syncedAt);
+        }
+        if (data.weeklyActuals) setWeeklyActuals(data.weeklyActuals);
+        if (data.trainingPlan) setTrainingPlan(data.trainingPlan);
+        if (data.hrZones) setHrZones(data.hrZones);
+      })
+      .catch(() => {}); // Static fallback is already loaded
+  }, []);
+
+  const triggerSync = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/sync", { method: "POST" });
+      const result = await res.json();
+      if (result.status === "success") {
+        // Reload data
+        const data = await fetch("/api/activities").then(r => r.json());
+        if (data.weeklyData?.length > 0) {
+          setWeeklyData(data.weeklyData);
+          setWeeklyActuals(data.weeklyActuals || staticWeeklyActuals);
+          setDataSource(data.source);
+          setSyncedAt(data.syncedAt);
+        }
+      }
+    } catch (e) {
+      console.error("Sync failed:", e);
+    }
+    setSyncing(false);
+  }, []);
+
+  const futureWeeks = useMemo(() => trainingPlan.filter(w => w.week > weeklyData.length).map(w => ({ week: w.week, plan: w.total })), [trainingPlan, weeklyData]);
 
   const stats = useMemo(() => {
     const completed = weeklyData;
@@ -240,6 +291,24 @@ export default function Dashboard() {
             </div>
             <div className="text-slate-500 text-xs mt-0.5">optimistic · target · conservative</div>
           </div>
+        </div>
+        {/* Sync status bar */}
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-700">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${dataSource === "whoop" ? "bg-emerald-400" : "bg-amber-400"}`}></div>
+            <span className="text-xs text-slate-400">
+              {dataSource === "whoop"
+                ? `WHOOP synced ${syncedAt ? new Date(syncedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}`
+                : "Static data — sync WHOOP to go live"}
+            </span>
+          </div>
+          <button
+            onClick={triggerSync}
+            disabled={syncing}
+            className="text-xs px-3 py-1 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors disabled:opacity-50"
+          >
+            {syncing ? "Syncing..." : "Sync WHOOP"}
+          </button>
         </div>
       </div>
 

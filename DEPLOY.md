@@ -147,8 +147,9 @@ Want **max-runs-berlin.de** instead of the Vercel URL?
 | Weekly Detail table (pace, HR, Z2 per week) | ✅ Live |
 | Heart Rate tab with zone reference card | ✅ Live |
 | Marathon projection (4:30 / 4:45 / 5:00) | ✅ Live |
-| WHOOP auto-sync | Phase 2 |
-| Database backend | Phase 2 |
+| WHOOP auto-sync (daily cron) | ✅ Live |
+| Vercel Blob storage | ✅ Live |
+| Manual sync button in dashboard | ✅ Live |
 
 ---
 
@@ -158,20 +159,26 @@ Want **max-runs-berlin.de** instead of the Vercel URL?
 berlin-marathon-app/
 ├── src/
 │   ├── app/
-│   │   ├── layout.js           ← HTML shell
-│   │   ├── page.js             ← imports Dashboard
-│   │   ├── globals.css          ← Tailwind
-│   │   └── api/sync/route.js   ← WHOOP sync stub
+│   │   ├── layout.js              ← HTML shell
+│   │   ├── page.js                ← imports Dashboard
+│   │   ├── globals.css            ← Tailwind
+│   │   └── api/
+│   │       ├── sync/route.js      ← WHOOP sync (cron + manual)
+│   │       └── activities/route.js ← Returns data for dashboard
 │   ├── components/
-│   │   └── Dashboard.jsx       ← the whole dashboard
+│   │   └── Dashboard.jsx          ← the whole dashboard
 │   └── lib/
-│       └── data.js             ← all training data (edit this to update)
-├── vercel.json                 ← cron config
+│       ├── data.js                ← static fallback data
+│       ├── whoop.js               ← WHOOP API client
+│       └── storage.js             ← Vercel Blob / local storage
+├── vercel.json                    ← cron config (daily 5am sync)
 ├── package.json
-└── DEPLOY.md                   ← this file
+└── DEPLOY.md                      ← this file
 ```
 
-**To update training data:** edit `src/lib/data.js`, then git push.
+**Data flow:** Cron (5am daily) → `/api/sync` → WHOOP API → Vercel Blob → `/api/activities` → Dashboard
+
+**To update training plan:** edit `src/lib/data.js` (the `trainingPlan` array), then git push.
 
 ---
 
@@ -187,16 +194,48 @@ berlin-marathon-app/
 
 ---
 
-## Phase 2: WHOOP auto-sync
+## WHOOP auto-sync setup
 
-When you're ready to wire up live WHOOP data:
+The sync is fully built. You just need two things: your WHOOP refresh token and a Vercel Blob store.
 
-1. Register at [developer.whoop.com](https://developer.whoop.com)
-2. Get Client ID + Secret
-3. Add env vars in Vercel → Settings → Environment Variables:
-   - `WHOOP_CLIENT_ID`
-   - `WHOOP_CLIENT_SECRET`
-   - `WHOOP_REFRESH_TOKEN` (from your existing `whoop_config.json`)
-4. I'll build out the `/api/sync` route to pull activities and write to a database
+### Get your WHOOP refresh token
 
-The `vercel.json` already has a daily cron job configured — just needs the API route wired up.
+1. Open **[app.whoop.com](https://app.whoop.com)** in Chrome
+2. Press **F12** → **Application** tab → **Cookies**
+3. Find the cookie with a very long value that starts with `eyJ...` — that's your Cognito refresh token
+4. Copy the full value
+
+Alternative: check your existing `whoop_config.json` — if it has a `refresh_token` field, use that.
+
+### Add Vercel Blob store
+
+1. Go to **Vercel** → your project → **Storage** tab
+2. Click **Create** → **Blob**
+3. Name it anything (e.g. `marathon-data`)
+4. Click **Connect** — this auto-adds `BLOB_READ_WRITE_TOKEN` to your env vars
+
+### Add environment variables
+
+1. Vercel → your project → **Settings** → **Environment Variables**
+2. Add: `WHOOP_REFRESH_TOKEN` = (the token from step 1)
+3. `BLOB_READ_WRITE_TOKEN` should already be there from the Blob setup
+4. Click **Redeploy** (Deployments tab → most recent → ... → Redeploy)
+
+### Test it
+
+After redeploying:
+
+1. Open your dashboard
+2. Click the **Sync WHOOP** button in the header
+3. Wait ~15 seconds — the dashboard will refresh with live data
+4. The green dot in the header confirms WHOOP is connected
+
+The daily cron job (`vercel.json`) syncs automatically at 5am UTC every day.
+
+### Refresh token expired?
+
+WHOOP refresh tokens last months, but if sync stops working:
+
+1. Repeat the "Get your WHOOP refresh token" steps above
+2. Update `WHOOP_REFRESH_TOKEN` in Vercel env vars
+3. Redeploy

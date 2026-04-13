@@ -3,7 +3,7 @@
   "framework": "nextjs",
   "crons": [
     {
-      "path": "/api/sync",
+      "path": "/api/sync?cron=1",
       "schedule": "0 5 * * *"
     }
   ]
