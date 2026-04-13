@@ -51,12 +51,12 @@ const DayCell = ({ planned, actual, isPast, isFuture, detail }) => {
   return <div className="text-xs py-1 px-1 text-slate-300">—</div>;
 };
 
-// HR Zone reference card component
+// HR Zone reference card component (uses static import — zones are constant)
 const ZoneCard = () => (
   <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
     <h4 className="text-sm font-semibold text-slate-700 mb-3">HR Zone Reference (Karvonen)</h4>
     <div className="space-y-2">
-      {Object.values(hrZones).map(z => (
+      {Object.values(staticHrZones).map(z => (
         <div key={z.name} className="flex items-center gap-3">
           <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: z.color }}></div>
           <div className="flex-1 min-w-0">
@@ -90,6 +90,8 @@ export default function Dashboard() {
   const [syncedAt, setSyncedAt] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
+  const [showTokenInput, setShowTokenInput] = useState(false);
+  const [tokenValue, setTokenValue] = useState("");
 
   // ═══ Dynamic current week from today's date ═══
   const currentWeek = useMemo(() => {
@@ -115,22 +117,31 @@ export default function Dashboard() {
       .catch(() => {}); // Static fallback is already loaded
   }, []);
 
-  const triggerSync = useCallback(async () => {
+  const triggerSync = useCallback(async (token) => {
     setSyncing(true);
     setSyncError(null);
     try {
-      const res = await fetch("/api/sync", { method: "POST" });
+      const res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken: token || undefined }),
+      });
       const result = await res.json();
       if (result.status === "success") {
-        // Reload data from the activities API (which uses synced-data.js)
-        const data = await fetch("/api/activities").then(r => r.json());
-        if (data.weeklyData?.length > 0) {
-          setWeeklyData(data.weeklyData);
-          setWeeklyActuals(data.weeklyActuals || staticWeeklyActuals);
-          setDataSource(data.source);
-          setSyncedAt(data.syncedAt);
+        // Sync returned live data — use it directly
+        if (result.weeklyData?.length > 0) {
+          const { trainingPlan: plan } = await import("@/lib/data");
+          const planMap = {};
+          for (const p of plan) planMap[p.week] = p.total;
+          const merged = result.weeklyData.map(w => ({ ...w, plan: planMap[w.week] || 0 }));
+          setWeeklyData(merged);
+          setWeeklyActuals(result.weeklyActuals || staticWeeklyActuals);
+          setDataSource("whoop");
+          setSyncedAt(result.syncedAt);
         }
         setSyncError(null);
+        setShowTokenInput(false);
+        setTokenValue("");
       } else if (result.status === "error") {
         setSyncError(result.message || "Sync failed — check WHOOP token");
       }
@@ -322,13 +333,36 @@ export default function Dashboard() {
             </span>
           </div>
           <button
-            onClick={triggerSync}
+            onClick={() => setShowTokenInput(!showTokenInput)}
             disabled={syncing}
             className="text-xs px-3 py-1 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors disabled:opacity-50"
           >
             {syncing ? "Syncing..." : "Sync WHOOP"}
           </button>
         </div>
+        {showTokenInput && (
+          <div className="mt-2 px-3 py-3 bg-slate-800 border border-slate-700 rounded-lg">
+            <div className="text-xs text-slate-400 mb-2">
+              Paste your WHOOP access token (app.whoop.com → F12 → Application → Cookies → <code className="text-slate-300">access_token</code>)
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={tokenValue}
+                onChange={(e) => setTokenValue(e.target.value)}
+                placeholder="eyJhbGciOi..."
+                className="flex-1 px-3 py-1.5 rounded bg-slate-900 border border-slate-600 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+              />
+              <button
+                onClick={() => triggerSync(tokenValue)}
+                disabled={syncing || !tokenValue.trim()}
+                className="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium disabled:opacity-50 transition-colors"
+              >
+                {syncing ? "Syncing..." : "Sync"}
+              </button>
+            </div>
+          </div>
+        )}
         {syncError && (
           <div className="mt-2 px-3 py-2 bg-red-900/40 border border-red-700/50 rounded-lg text-xs text-red-300">
             {syncError}
