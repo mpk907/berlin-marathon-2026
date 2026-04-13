@@ -26,7 +26,7 @@ export async function GET(request) {
     activitiesCount: meta?.activitiesCount || 0,
     weeksWithData: meta?.weeksWithData || 0,
     storage: process.env.BLOB_READ_WRITE_TOKEN ? "blob" : "local",
-    configured: !!process.env.WHOOP_REFRESH_TOKEN,
+    configured: !!(process.env.WHOOP_REFRESH_TOKEN || process.env.WHOOP_ACCESS_TOKEN),
   });
 }
 
@@ -36,19 +36,26 @@ export async function POST() {
 
 async function runSync() {
   const refreshToken = process.env.WHOOP_REFRESH_TOKEN;
+  const envAccessToken = process.env.WHOOP_ACCESS_TOKEN;
 
-  if (!refreshToken) {
+  if (!refreshToken && !envAccessToken) {
     return NextResponse.json({
       status: "error",
-      message: "WHOOP_REFRESH_TOKEN not set. Add it in Vercel → Settings → Environment Variables.",
+      message: "WHOOP_ACCESS_TOKEN or WHOOP_REFRESH_TOKEN not set. Add in Vercel → Settings → Environment Variables.",
     }, { status: 400 });
   }
 
   try {
-    // 1. Get fresh access token
-    console.log("[sync] Refreshing WHOOP access token...");
-    const accessToken = await refreshAccessToken(refreshToken);
-    console.log("[sync] Token refreshed successfully");
+    // 1. Get access token — try direct token first, then refresh
+    let accessToken;
+    if (envAccessToken) {
+      console.log("[sync] Using WHOOP_ACCESS_TOKEN from env...");
+      accessToken = envAccessToken;
+    } else {
+      console.log("[sync] Refreshing WHOOP access token...");
+      accessToken = await refreshAccessToken(refreshToken);
+      console.log("[sync] Token refreshed successfully");
+    }
 
     // 2. Fetch activities (from Jan 1 2026 to now)
     const startDate = new Date("2026-01-01T00:00:00Z");

@@ -21,6 +21,9 @@
 # vercel
 .vercel
 
+# scripts
+push-to-github.command
+
 # debug
 npm-debug.log*
 yarn-debug.log*
