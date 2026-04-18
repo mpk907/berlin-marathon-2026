@@ -1,13 +1,13 @@
 // ═══════════════════════════════════════════
 // WHOOP Sync API Route
-// GET  /api/sync — returns last sync status (also triggered by Vercel cron)
+// GET  /api/sync — returns sync status (also triggered by Vercel cron)
 // POST /api/sync — triggers a manual sync
 // ═══════════════════════════════════════════
 
 import { NextResponse } from "next/server";
-import { refreshAccessToken, fetchActivities, processActivities } from "@/lib/whoop";
+import { fetchActivities, processActivities } from "@/lib/whoop";
 
-// CORS headers for cross-origin sync requests (e.g. from WHOOP tab)
+// CORS headers for cross-origin sync requests (e.g. from WHOOP tab bookmarklet)
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -18,14 +18,64 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
 
-// Helper to add CORS headers to any response
 function withCors(response) {
   Object.entries(corsHeaders).forEach(([k, v]) => response.headers.set(k, v));
   return response;
 }
 
-// Vercel cron calls GET, so we sync on both GET and POST
-// But only sync on GET if ?cron=1 is present (from vercel.json)
+// ─── In-memory token cache (shared with whoop-callback) ───
+let cachedTokens = {
+  accessToken: null,
+  refreshToken: null,
+  expiresAt: null,
+};
+
+/**
+ * Try to refresh an expired access token using WHOOP OAuth refresh_token flow.
+ * Returns a fresh access token or null.
+ */
+async function refreshOAuthToken(refreshToken) {
+  const clientId = process.env.WHOOP_CLIENT_ID;
+  const clientSecret = process.env.WHOOP_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret || !refreshToken) return null;
+
+  try {
+    const res = await fetch("https://api.prod.whoop.com/oauth/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: clientId,
+        client_secret: clientSecret,
+        scope: "read:workout read:profile read:body_measurement offline",
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("[sync] OAuth refresh failed:", await res.text());
+      return null;
+    }
+
+    const tokens = await res.json();
+    console.log("[sync] OAuth token refreshed, expires in", tokens.expires_in, "s");
+
+    // Update cache
+    cachedTokens = {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || refreshToken,
+      expiresAt: Date.now() + (tokens.expires_in || 3600) * 1000,
+    };
+
+    return tokens.access_token;
+  } catch (err) {
+    console.error("[sync] OAuth refresh error:", err.message);
+    return null;
+  }
+}
+
+// Vercel cron calls GET with ?cron=1
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const isCron = searchParams.get("cron") === "1";
@@ -35,63 +85,80 @@ export async function GET(request) {
   }
 
   // Regular GET: return sync status
+  const hasOAuth = !!(process.env.WHOOP_CLIENT_ID && process.env.WHOOP_CLIENT_SECRET);
+  const hasRefresh = !!(process.env.WHOOP_REFRESH_TOKEN || cachedTokens.refreshToken);
+  const hasAccess = !!(process.env.WHOOP_ACCESS_TOKEN || cachedTokens.accessToken);
+
   return withCors(NextResponse.json({
     status: "ok",
-    configured: !!(process.env.WHOOP_REFRESH_TOKEN || process.env.WHOOP_ACCESS_TOKEN),
+    configured: hasOAuth || hasRefresh || hasAccess,
+    oauth: hasOAuth,
+    hasRefreshToken: hasRefresh,
+    hasAccessToken: hasAccess,
   }));
 }
 
 export async function POST(request) {
-  // Accept access token directly in POST body (for browser-initiated sync)
   let bodyToken = null;
   try {
     const body = await request.json();
     bodyToken = body?.accessToken || null;
   } catch (e) {
-    // No JSON body — that's fine, we'll use env vars
+    // No JSON body — that's fine
   }
   return runSync(bodyToken);
 }
 
 async function runSync(bodyToken = null) {
-  const refreshToken = process.env.WHOOP_REFRESH_TOKEN;
-  const envAccessToken = process.env.WHOOP_ACCESS_TOKEN;
+  // Token priority: body → cached OAuth → env access → OAuth refresh → env refresh
+  let accessToken = null;
 
-  if (!refreshToken && !envAccessToken && !bodyToken) {
+  // 1. Direct token from POST body (bookmarklet / manual paste)
+  if (bodyToken) {
+    console.log("[sync] Using access token from POST body");
+    accessToken = bodyToken;
+  }
+
+  // 2. Cached OAuth token (from /api/whoop-callback)
+  if (!accessToken && cachedTokens.accessToken && cachedTokens.expiresAt > Date.now()) {
+    console.log("[sync] Using cached OAuth access token");
+    accessToken = cachedTokens.accessToken;
+  }
+
+  // 3. Env access token
+  if (!accessToken && process.env.WHOOP_ACCESS_TOKEN) {
+    console.log("[sync] Using WHOOP_ACCESS_TOKEN from env");
+    accessToken = process.env.WHOOP_ACCESS_TOKEN;
+  }
+
+  // 4. OAuth refresh token (cached or env)
+  if (!accessToken) {
+    const refreshToken = cachedTokens.refreshToken || process.env.WHOOP_REFRESH_TOKEN;
+    if (refreshToken) {
+      console.log("[sync] Refreshing via OAuth...");
+      accessToken = await refreshOAuthToken(refreshToken);
+    }
+  }
+
+  if (!accessToken) {
     return withCors(NextResponse.json({
       status: "error",
-      message: "No WHOOP token available. Pass accessToken in POST body, or set WHOOP_ACCESS_TOKEN env var.",
+      message: "No WHOOP token available. Either connect via OAuth (/api/whoop-auth), pass token in POST body, or set WHOOP_ACCESS_TOKEN env var.",
+      setupUrl: "/sync",
     }, { status: 400 }));
   }
 
   try {
-    // 1. Get access token — try body token first, then env, then refresh
-    let accessToken;
-    if (bodyToken) {
-      console.log("[sync] Using access token from POST body...");
-      accessToken = bodyToken;
-    } else if (envAccessToken) {
-      console.log("[sync] Using WHOOP_ACCESS_TOKEN from env...");
-      accessToken = envAccessToken;
-    } else {
-      console.log("[sync] Refreshing WHOOP access token...");
-      accessToken = await refreshAccessToken(refreshToken);
-      console.log("[sync] Token refreshed successfully");
-    }
-
-    // 2. Fetch activities (from Jan 1 2026 to now)
     const startDate = new Date("2026-01-01T00:00:00Z");
     const endDate = new Date();
     console.log(`[sync] Fetching activities ${startDate.toISOString()} → ${endDate.toISOString()}`);
 
-    const { activities } = await fetchActivities(accessToken, startDate, endDate, refreshToken);
+    const { activities } = await fetchActivities(accessToken, startDate, endDate);
     console.log(`[sync] Fetched ${activities.length} activities`);
 
-    // 3. Process into weekly summaries
     const { weeklyData, weeklyActuals } = processActivities(activities);
     console.log(`[sync] Processed ${weeklyData.length} weeks with data`);
 
-    // 4. Return all data directly (no Blob storage needed)
     return withCors(NextResponse.json({
       status: "success",
       syncedAt: new Date().toISOString(),
@@ -110,17 +177,22 @@ async function runSync(bodyToken = null) {
   } catch (error) {
     console.error("[sync] Error:", error);
 
-    if (error.message === "TOKEN_EXPIRED") {
-      return withCors(NextResponse.json({
-        status: "error",
-        message: "WHOOP token expired and refresh failed. Update WHOOP_REFRESH_TOKEN in env vars.",
-        help: "Open app.whoop.com → F12 → Application → Cookies → copy cognito refresh token",
-      }, { status: 401 }));
+    // If token expired, try OAuth refresh as fallback
+    if (error.message === "TOKEN_EXPIRED" && !bodyToken) {
+      const refreshToken = cachedTokens.refreshToken || process.env.WHOOP_REFRESH_TOKEN;
+      if (refreshToken) {
+        console.log("[sync] Token expired, trying OAuth refresh...");
+        const newToken = await refreshOAuthToken(refreshToken);
+        if (newToken) {
+          return runSync(newToken); // Retry with fresh token
+        }
+      }
     }
 
     return withCors(NextResponse.json({
       status: "error",
       message: error.message,
+      setupUrl: "/sync",
     }, { status: 500 }));
   }
 }
