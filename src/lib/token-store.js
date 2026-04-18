@@ -3,7 +3,7 @@
 // Used by whoop-callback and sync routes
 // ═══════════════════════════════════════════
 
-import { put, list } from "@vercel/blob";
+import { put, list, getDownloadUrl } from "@vercel/blob";
 
 const TOKEN_BLOB_PATH = "whoop-oauth-tokens.json";
 
@@ -19,7 +19,7 @@ export async function saveTokens({ accessToken, refreshToken, expiresIn }) {
   };
 
   await put(TOKEN_BLOB_PATH, JSON.stringify(data), {
-    access: "public",
+    access: "private",
     addRandomSuffix: false,
   });
 
@@ -36,7 +36,9 @@ export async function loadTokens() {
     const { blobs } = await list({ prefix: TOKEN_BLOB_PATH });
     if (!blobs || blobs.length === 0) return null;
 
-    const res = await fetch(blobs[0].url);
+    // Private store: use getDownloadUrl to get a signed URL
+    const downloadUrl = await getDownloadUrl(blobs[0].url);
+    const res = await fetch(downloadUrl);
     if (!res.ok) return null;
 
     const data = await res.json();
