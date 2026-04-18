@@ -343,7 +343,7 @@ export default function Dashboard() {
         {showTokenInput && (
           <div className="mt-2 px-3 py-3 bg-slate-800 border border-slate-700 rounded-lg">
             <div className="text-xs text-slate-400 mb-2">
-              Paste your WHOOP access token (app.whoop.com → F12 → Application → Cookies → <code className="text-slate-300">access_token</code>)
+              Paste your WHOOP access token, or use the <a href="/sync" className="text-blue-400 underline">one-click sync page</a> for easier syncing.
             </div>
             <div className="flex gap-2">
               <input
