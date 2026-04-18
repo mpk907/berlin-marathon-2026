@@ -3,12 +3,12 @@
 // Used by whoop-callback and sync routes
 // ═══════════════════════════════════════════
 
-import { put, list, getDownloadUrl } from "@vercel/blob";
+import { put, get } from "@vercel/blob";
 
 const TOKEN_BLOB_PATH = "whoop-oauth-tokens.json";
 
 /**
- * Save OAuth tokens to Vercel Blob storage.
+ * Save OAuth tokens to Vercel Blob storage (private store).
  */
 export async function saveTokens({ accessToken, refreshToken, expiresIn }) {
   const data = {
@@ -21,6 +21,7 @@ export async function saveTokens({ accessToken, refreshToken, expiresIn }) {
   await put(TOKEN_BLOB_PATH, JSON.stringify(data), {
     access: "private",
     addRandomSuffix: false,
+    contentType: "application/json",
   });
 
   console.log("[token-store] Saved tokens to blob, expires in", expiresIn, "s");
@@ -28,20 +29,22 @@ export async function saveTokens({ accessToken, refreshToken, expiresIn }) {
 }
 
 /**
- * Load OAuth tokens from Vercel Blob storage.
+ * Load OAuth tokens from Vercel Blob storage (private store).
  * Returns { accessToken, refreshToken, expiresAt, updatedAt } or null.
  */
 export async function loadTokens() {
   try {
-    const { blobs } = await list({ prefix: TOKEN_BLOB_PATH });
-    if (!blobs || blobs.length === 0) return null;
+    const result = await get(TOKEN_BLOB_PATH, { access: "private" });
 
-    // Private store: use getDownloadUrl to get a signed URL
-    const downloadUrl = await getDownloadUrl(blobs[0].url);
-    const res = await fetch(downloadUrl);
-    if (!res.ok) return null;
+    if (!result || result.statusCode === 404) return null;
 
-    const data = await res.json();
+    const text = await result.stream
+      ? new Response(result.stream).text()
+      : null;
+
+    if (!text) return null;
+
+    const data = JSON.parse(text);
     console.log("[token-store] Loaded tokens from blob, updated", data.updatedAt);
     return data;
   } catch (err) {
