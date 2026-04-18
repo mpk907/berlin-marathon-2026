@@ -2,10 +2,12 @@
 // WHOOP Sync API Route
 // GET  /api/sync — returns sync status (also triggered by Vercel cron)
 // POST /api/sync — triggers a manual sync
+// Reads/writes OAuth tokens from Vercel Blob for serverless persistence
 // ═══════════════════════════════════════════
 
 import { NextResponse } from "next/server";
 import { fetchActivities, processActivities } from "@/lib/whoop";
+import { loadTokens, saveTokens } from "@/lib/token-store";
 
 // CORS headers for cross-origin sync requests (e.g. from WHOOP tab bookmarklet)
 const corsHeaders = {
@@ -23,15 +25,9 @@ function withCors(response) {
   return response;
 }
 
-// ─── In-memory token cache (shared with whoop-callback) ───
-let cachedTokens = {
-  accessToken: null,
-  refreshToken: null,
-  expiresAt: null,
-};
-
 /**
- * Try to refresh an expired access token using WHOOP OAuth refresh_token flow.
+ * Refresh an expired access token using WHOOP OAuth refresh_token flow.
+ * Saves the new tokens to Vercel Blob.
  * Returns a fresh access token or null.
  */
 async function refreshOAuthToken(refreshToken) {
@@ -61,12 +57,12 @@ async function refreshOAuthToken(refreshToken) {
     const tokens = await res.json();
     console.log("[sync] OAuth token refreshed, expires in", tokens.expires_in, "s");
 
-    // Update cache
-    cachedTokens = {
+    // Persist refreshed tokens to blob
+    await saveTokens({
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token || refreshToken,
-      expiresAt: Date.now() + (tokens.expires_in || 3600) * 1000,
-    };
+      expiresIn: tokens.expires_in,
+    });
 
     return tokens.access_token;
   } catch (err) {
@@ -86,8 +82,9 @@ export async function GET(request) {
 
   // Regular GET: return sync status
   const hasOAuth = !!(process.env.WHOOP_CLIENT_ID && process.env.WHOOP_CLIENT_SECRET);
-  const hasRefresh = !!(process.env.WHOOP_REFRESH_TOKEN || cachedTokens.refreshToken);
-  const hasAccess = !!(process.env.WHOOP_ACCESS_TOKEN || cachedTokens.accessToken);
+  const stored = await loadTokens();
+  const hasRefresh = !!(stored?.refreshToken || process.env.WHOOP_REFRESH_TOKEN);
+  const hasAccess = !!(stored?.accessToken && stored.expiresAt > Date.now());
 
   return withCors(NextResponse.json({
     status: "ok",
@@ -95,6 +92,7 @@ export async function GET(request) {
     oauth: hasOAuth,
     hasRefreshToken: hasRefresh,
     hasAccessToken: hasAccess,
+    lastSync: stored?.updatedAt || null,
   }));
 }
 
@@ -110,7 +108,6 @@ export async function POST(request) {
 }
 
 async function runSync(bodyToken = null) {
-  // Token priority: body → cached OAuth → env access → OAuth refresh → env refresh
   let accessToken = null;
 
   // 1. Direct token from POST body (bookmarklet / manual paste)
@@ -119,10 +116,13 @@ async function runSync(bodyToken = null) {
     accessToken = bodyToken;
   }
 
-  // 2. Cached OAuth token (from /api/whoop-callback)
-  if (!accessToken && cachedTokens.accessToken && cachedTokens.expiresAt > Date.now()) {
-    console.log("[sync] Using cached OAuth access token");
-    accessToken = cachedTokens.accessToken;
+  // 2. Stored OAuth token from Vercel Blob (if not expired)
+  if (!accessToken) {
+    const stored = await loadTokens();
+    if (stored?.accessToken && stored.expiresAt > Date.now()) {
+      console.log("[sync] Using stored OAuth access token from blob");
+      accessToken = stored.accessToken;
+    }
   }
 
   // 3. Env access token
@@ -131,9 +131,10 @@ async function runSync(bodyToken = null) {
     accessToken = process.env.WHOOP_ACCESS_TOKEN;
   }
 
-  // 4. OAuth refresh token (cached or env)
+  // 4. OAuth refresh token (blob or env)
   if (!accessToken) {
-    const refreshToken = cachedTokens.refreshToken || process.env.WHOOP_REFRESH_TOKEN;
+    const stored = await loadTokens();
+    const refreshToken = stored?.refreshToken || process.env.WHOOP_REFRESH_TOKEN;
     if (refreshToken) {
       console.log("[sync] Refreshing via OAuth...");
       accessToken = await refreshOAuthToken(refreshToken);
@@ -179,7 +180,8 @@ async function runSync(bodyToken = null) {
 
     // If token expired, try OAuth refresh as fallback
     if (error.message === "TOKEN_EXPIRED" && !bodyToken) {
-      const refreshToken = cachedTokens.refreshToken || process.env.WHOOP_REFRESH_TOKEN;
+      const stored = await loadTokens();
+      const refreshToken = stored?.refreshToken || process.env.WHOOP_REFRESH_TOKEN;
       if (refreshToken) {
         console.log("[sync] Token expired, trying OAuth refresh...");
         const newToken = await refreshOAuthToken(refreshToken);

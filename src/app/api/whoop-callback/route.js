@@ -1,24 +1,12 @@
 // ═══════════════════════════════════════════
 // WHOOP OAuth — Step 2: Handle callback, exchange code for tokens
 // GET /api/whoop-callback?code=XXX → exchanges for access + refresh tokens
+// Stores tokens in Vercel Blob for persistence across serverless invocations
 // ═══════════════════════════════════════════
 
 import { NextResponse } from "next/server";
 import { fetchActivities, processActivities } from "@/lib/whoop";
-
-// Simple in-memory token store (persists across requests in the same serverless instance)
-// For production, use Vercel KV or a database. This works for low-traffic personal apps.
-let storedTokens = {
-  accessToken: null,
-  refreshToken: null,
-  expiresAt: null,
-  updatedAt: null,
-};
-
-// Export for use by sync route
-export function getStoredTokens() {
-  return storedTokens;
-}
+import { saveTokens } from "@/lib/token-store";
 
 export async function GET(request) {
   const { searchParams, origin } = new URL(request.url);
@@ -64,27 +52,25 @@ export async function GET(request) {
     const tokens = await tokenRes.json();
     console.log("[whoop-callback] Got tokens, access expires in", tokens.expires_in, "seconds");
 
-    // Store tokens in memory
-    storedTokens = {
+    // Store tokens persistently in Vercel Blob
+    await saveTokens({
       accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token || null,
-      expiresAt: Date.now() + (tokens.expires_in || 3600) * 1000,
-      updatedAt: new Date().toISOString(),
-    };
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+    });
 
     // Immediately sync with the new token
     try {
       const startDate = new Date("2026-01-01T00:00:00Z");
       const endDate = new Date();
       const { activities } = await fetchActivities(tokens.access_token, startDate, endDate);
-      const { weeklyData, weeklyActuals } = processActivities(activities);
+      const { weeklyData } = processActivities(activities);
 
       return NextResponse.redirect(
         `${origin}/sync?success=true&activities=${activities.length}&weeks=${weeklyData.length}`
       );
     } catch (syncErr) {
       console.error("[whoop-callback] Sync after auth failed:", syncErr.message);
-      // Auth worked even if sync failed — still redirect with partial success
       return NextResponse.redirect(`${origin}/sync?success=auth_only&error=${encodeURIComponent(syncErr.message)}`);
     }
   } catch (err) {
