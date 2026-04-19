@@ -1,211 +1,194 @@
 // ═══════════════════════════════════════════════════
-// WHOOP API Client for Berlin Marathon Dashboard
-// Ported from whoop_sync.py — handles token refresh,
-// paginated activity fetch, zone/HR/distance processing
+// WHOOP Developer API v1 Client
+// Uses OAuth2 tokens (not Cognito) for Berlin Marathon Dashboard
+// Endpoints: /developer/v1/activity/workout, /developer/v1/cycle
 // ═══════════════════════════════════════════════════
 
-const COGNITO_URL = "https://cognito-idp.us-west-2.amazonaws.com/";
-const API_BASE = "https://api.prod.whoop.com";
-const CLIENT_ID = "37365lrcda1js3fapqfe2n40eh"; // WHOOP web app client ID
+const API_BASE = "https://api.prod.whoop.com/developer/v1";
 
-// v2_activity type string → our tracker Type
-const TYPE_MAP = {
-  "running": "Run", "trail-running": "Run", "treadmill-running": "Run",
-  "soccer": "Football", "football": "Football", "futsal": "Football",
-  "cycling": "Spin", "spinning": "Spin", "spin": "Spin",
-  "mountain-biking": "Spin", "indoor-cycling": "Spin",
-};
-
-// sport_id fallback mapping
+// sport_id → our tracker Type
 const SPORT_ID_MAP = {
-  0: "Run", 33: "Run", 63: "Run",
-  1: "Spin", 57: "Spin", 97: "Spin",
-  30: "Football",
+  0: "Run", 1: "Spin", 16: "Run", // running, cycling, outdoor run
+  33: "Run", 63: "Run",            // track running, trail running
+  57: "Spin", 97: "Spin",          // indoor cycling
+  30: "Football",                   // soccer
+  44: "Other", 48: "Other",        // functional fitness, HIIT
+  71: "Other",                      // strength training
+  -1: "Other",                      // unspecified
 };
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /**
- * Refresh WHOOP access token using Cognito refresh_token grant.
- * Returns new access token string.
+ * Fetch all workouts from WHOOP Developer API v1.
+ * Paginates using nextToken.
  */
-export async function refreshAccessToken(refreshToken) {
-  const resp = await fetch(COGNITO_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-amz-json-1.1",
-      "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
-    },
-    body: JSON.stringify({
-      AuthFlow: "REFRESH_TOKEN_AUTH",
-      ClientId: CLIENT_ID,
-      AuthParameters: { REFRESH_TOKEN: refreshToken },
-    }),
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text();
-    throw new Error(`Token refresh failed (${resp.status}): ${body}`);
-  }
-
-  const data = await resp.json();
-  const newToken = data.AuthenticationResult?.AccessToken;
-  if (!newToken) throw new Error("No AccessToken in refresh response");
-  return newToken;
-}
-
-/**
- * Parse WHOOP's PostgreSQL range format for timestamps.
- * e.g. "['2026-04-12T14:13:30.670Z','2026-04-12T14:41:59.630Z')"
- */
-function parseDuring(duringStr) {
-  const matches = (duringStr || "").match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)/g);
-  if (matches && matches.length >= 2) {
-    return { start: new Date(matches[0]), end: new Date(matches[1]) };
-  } else if (matches && matches.length === 1) {
-    return { start: new Date(matches[0]), end: null };
-  }
-  return { start: null, end: null };
-}
-
-/**
- * Fetch all activities from WHOOP API, paginating in 14-day chunks.
- * Automatically refreshes token on 401 if refreshToken is provided.
- */
-export async function fetchActivities(accessToken, startDate, endDate, refreshToken = null) {
+export async function fetchActivities(accessToken, startDate, endDate) {
   const activities = [];
-  let token = accessToken;
-  let chunkStart = new Date(startDate);
-  const end = new Date(endDate);
-  let tokenRefreshed = false;
+  const token = accessToken;
 
-  while (chunkStart < end) {
-    const chunkEnd = new Date(Math.min(
-      chunkStart.getTime() + 14 * 86400000,
-      end.getTime()
-    ));
+  // Fetch workouts
+  let nextToken = null;
+  let pageCount = 0;
+  const MAX_PAGES = 50; // safety valve
 
+  do {
     const params = new URLSearchParams({
-      apiVersion: "7",
-      startTime: chunkStart.toISOString(),
-      endTime: chunkEnd.toISOString(),
+      start: new Date(startDate).toISOString(),
+      end: new Date(endDate).toISOString(),
+      limit: "25",
     });
+    if (nextToken) params.set("nextToken", nextToken);
 
-    let resp = await fetch(
-      `${API_BASE}/core-details-bff/v0/cycles/details?${params}`,
-      { headers: { Authorization: `bearer ${token}` } }
-    );
-
-    // Auto-refresh on 401
-    if (resp.status === 401 && !tokenRefreshed && refreshToken) {
-      token = await refreshAccessToken(refreshToken);
-      tokenRefreshed = true;
-      resp = await fetch(
-        `${API_BASE}/core-details-bff/v0/cycles/details?${params}`,
-        { headers: { Authorization: `bearer ${token}` } }
-      );
-    }
+    const resp = await fetch(`${API_BASE}/activity/workout?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
     if (resp.status === 401) {
       throw new Error("TOKEN_EXPIRED");
     }
 
     if (!resp.ok) {
-      console.warn(`WHOOP API error ${resp.status} for chunk ${chunkStart.toISOString()}`);
-      chunkStart = new Date(chunkEnd.getTime() + 86400000);
-      continue;
+      const errText = await resp.text();
+      console.warn(`[whoop] API error ${resp.status}: ${errText}`);
+      break;
     }
 
     const data = await resp.json();
     const records = data.records || [];
+    console.log(`[whoop] Page ${pageCount + 1}: ${records.length} workouts`);
 
-    for (const record of records) {
-      const workouts = record.workouts || [];
-      const v2Activities = record.v2_activities || [];
-      const recovery = record.recovery || {};
+    for (const w of records) {
+      if (!w.start || !w.end) continue;
+      if (w.score_state !== "SCORED") continue;
 
-      // Build activity_id → v2_activity lookup
-      const v2Lookup = {};
-      for (const v2 of v2Activities) {
-        v2Lookup[v2.id] = v2;
+      const score = w.score || {};
+      const start = new Date(w.start);
+      const end = new Date(w.end);
+
+      // Duration in minutes
+      const durationMin = Math.round((end - start) / 60000 * 10) / 10;
+
+      // Activity type from sport_id
+      const activityType = SPORT_ID_MAP[w.sport_id] ?? "Other";
+
+      // Distance
+      const distanceKm = Math.round((score.distance_meter || 0) / 1000 * 100) / 100;
+
+      // Pace (min/km) for runs with distance
+      let pace = "";
+      if (activityType === "Run" && distanceKm > 0.5 && durationMin > 0) {
+        const paceVal = durationMin / distanceKm;
+        const paceMin = Math.floor(paceVal);
+        const paceSec = Math.floor((paceVal - paceMin) * 60);
+        pace = `${paceMin}:${String(paceSec).padStart(2, "0")}`;
       }
 
-      for (const w of workouts) {
-        const v2 = v2Lookup[w.activity_id] || {};
-        const v2Type = v2.type || "";
+      // Heart rate
+      const avgHr = score.average_heart_rate || null;
+      const maxHr = score.max_heart_rate || null;
 
-        // Skip sleep/nap
-        if (v2Type === "sleep" || v2Type === "nap") continue;
+      // Zone percentages from zone_duration (milliseconds)
+      // WHOOP zones: zone_zero through zone_five
+      // Our mapping: Z1=zone_zero+zone_one, Z2=zone_two, Z3=zone_three, Z4=zone_four, Z5=zone_five
+      const zd = score.zone_duration || {};
+      const zones = [
+        zd.zone_zero_milli || 0,
+        zd.zone_one_milli || 0,
+        zd.zone_two_milli || 0,
+        zd.zone_three_milli || 0,
+        zd.zone_four_milli || 0,
+        zd.zone_five_milli || 0,
+      ];
+      const totalZone = zones.reduce((a, b) => a + b, 0);
+      let z1 = 0, z2 = 0, z3 = 0, z4 = 0, z5 = 0;
+      if (totalZone > 0) {
+        z1 = Math.round((zones[0] + zones[1]) / totalZone * 100) / 100;
+        z2 = Math.round(zones[2] / totalZone * 100) / 100;
+        z3 = Math.round(zones[3] / totalZone * 100) / 100;
+        z4 = Math.round(zones[4] / totalZone * 100) / 100;
+        z5 = Math.round(zones[5] / totalZone * 100) / 100;
+      }
 
-        // Determine activity type
-        const activityType = TYPE_MAP[v2Type] || SPORT_ID_MAP[w.sport_id] || "Other";
+      // Calories (kJ → kcal)
+      const kj = score.kilojoule || 0;
+      const calories = kj ? Math.round(kj / 4.184) : null;
 
-        // Parse timestamps
-        const { start, end: endTs } = parseDuring(w.during || "");
-        if (!start) continue;
+      activities.push({
+        date: start.toISOString(),
+        day: DAY_NAMES[start.getUTCDay() === 0 ? 6 : start.getUTCDay() - 1],
+        type: activityType,
+        translatedType: `sport_id_${w.sport_id}`,
+        distance: distanceKm,
+        duration: durationMin,
+        pace,
+        avgHr,
+        maxHr,
+        z1, z2, z3, z4, z5,
+        calories,
+        strain: score.strain || null,
+        restingHr: null,       // populated from cycle data below
+        recoveryScore: null,   // populated from cycle data below
+      });
+    }
 
-        // Duration in minutes
-        const durationMin = endTs
-          ? Math.round((endTs - start) / 60000 * 10) / 10
-          : 0;
+    nextToken = data.next_token || null;
+    pageCount++;
+  } while (nextToken && pageCount < MAX_PAGES);
 
-        // Distance from GPS data
-        const gps = w.gps_data || {};
-        const distanceKm = Math.round((gps.distance_meters || 0) / 1000 * 100) / 100;
+  // Fetch cycles for recovery data (resting HR, recovery score)
+  try {
+    let cycleNext = null;
+    let cyclePage = 0;
+    const recoveryByDate = {};
 
-        // Pace (min/km) for runs with GPS
-        let pace = "";
-        if (activityType === "Run" && distanceKm > 0.5 && durationMin > 0) {
-          const paceVal = durationMin / distanceKm;
-          const paceMin = Math.floor(paceVal);
-          const paceSec = Math.floor((paceVal - paceMin) * 60);
-          pace = `${paceMin}:${String(paceSec).padStart(2, "0")}`;
-        }
+    do {
+      const params = new URLSearchParams({
+        start: new Date(startDate).toISOString(),
+        end: new Date(endDate).toISOString(),
+        limit: "25",
+      });
+      if (cycleNext) params.set("nextToken", cycleNext);
 
-        // Heart rate
-        const avgHr = w.average_heart_rate || null;
-        const maxHr = w.max_heart_rate || null;
+      const resp = await fetch(`${API_BASE}/cycle?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-        // Zone percentages from zone_durations (6 zones in seconds)
-        // WHOOP zones: [0-50%, 50-60%, 60-70%, 70-80%, 80-90%, 90-100%]
-        // Our zones: Z1=0-60%, Z2=60-70%, Z3=70-80%, Z4=80-90%, Z5=90-100%
-        const zones = w.zone_durations || [0, 0, 0, 0, 0, 0];
-        const totalZoneSec = zones.reduce((a, b) => a + b, 0);
-        let z1 = 0, z2 = 0, z3 = 0, z4 = 0, z5 = 0;
-        if (totalZoneSec > 0) {
-          z1 = Math.round((zones[0] + zones[1]) / totalZoneSec * 100) / 100;
-          z2 = Math.round(zones[2] / totalZoneSec * 100) / 100;
-          z3 = Math.round(zones[3] / totalZoneSec * 100) / 100;
-          z4 = Math.round(zones[4] / totalZoneSec * 100) / 100;
-          z5 = Math.round(zones[5] / totalZoneSec * 100) / 100;
-        }
+      if (!resp.ok) break;
 
-        // Calories (kJ → kcal)
-        const kj = w.kilojoules || 0;
-        const calories = kj ? Math.round(kj / 4.184) : null;
-
-        activities.push({
-          date: start.toISOString(),
-          day: DAY_NAMES[start.getUTCDay() === 0 ? 6 : start.getUTCDay() - 1],
-          type: activityType,
-          translatedType: v2.translated_type || v2Type,
-          distance: distanceKm,
-          duration: durationMin,
-          pace,
-          avgHr,
-          maxHr,
-          z1, z2, z3, z4, z5,
-          calories,
+      const data = await resp.json();
+      for (const c of (data.records || [])) {
+        if (!c.start) continue;
+        const dateKey = c.start.slice(0, 10); // YYYY-MM-DD
+        const recovery = c.score?.recovery || {};
+        recoveryByDate[dateKey] = {
           restingHr: recovery.resting_heart_rate || null,
           recoveryScore: recovery.recovery_score || null,
-        });
+        };
+      }
+
+      cycleNext = data.next_token || null;
+      cyclePage++;
+    } while (cycleNext && cyclePage < MAX_PAGES);
+
+    // Merge recovery data into activities
+    for (const act of activities) {
+      const dateKey = act.date.slice(0, 10);
+      const rec = recoveryByDate[dateKey];
+      if (rec) {
+        act.restingHr = rec.restingHr;
+        act.recoveryScore = rec.recoveryScore;
       }
     }
 
-    chunkStart = new Date(chunkEnd.getTime() + 86400000);
+    console.log(`[whoop] Loaded recovery data for ${Object.keys(recoveryByDate).length} days`);
+  } catch (err) {
+    console.warn("[whoop] Failed to fetch cycle/recovery data:", err.message);
+    // Non-fatal — workouts still usable without recovery data
   }
 
   activities.sort((a, b) => new Date(a.date) - new Date(b.date));
+  console.log(`[whoop] Total: ${activities.length} activities`);
   return { activities, accessToken: token };
 }
 
@@ -260,9 +243,7 @@ export function processActivities(activities) {
     const spin = acts.filter(a => a.type === "Spin");
 
     const runKm = runs.reduce((s, a) => s + a.distance, 0);
-    // Football equiv: 0.11 km/min (from project spec)
     const footballEquiv = football.reduce((s, a) => s + a.duration * 0.11, 0);
-    // Spin: use distance if available, else ~0.25 km/min equiv (~15 km/h indoor cycling)
     const spinKm = spin.reduce((s, a) => s + (a.distance > 0 ? a.distance : a.duration * 0.25), 0);
 
     const longRun = runs.length > 0
@@ -279,7 +260,6 @@ export function processActivities(activities) {
       ? Math.round(z2Values.reduce((a, b) => a + b, 0) / z2Values.length * 100) / 100
       : 0;
 
-    // Average pace from runs with pace data
     const paceRuns = runs.filter(a => a.pace && a.distance > 0.5);
     let avgPaceStr = null;
     if (paceRuns.length > 0) {
@@ -294,7 +274,6 @@ export function processActivities(activities) {
       avgPaceStr = `${pm}:${String(ps).padStart(2, "0")}`;
     }
 
-    // Week date range string
     const wkStart = new Date(WEEK1_START.getTime() + (wk - 1) * 7 * 86400000);
     const wkEnd = new Date(wkStart.getTime() + 6 * 86400000);
     const fmtDate = (d) => {
@@ -310,14 +289,13 @@ export function processActivities(activities) {
       run: Math.round(runKm * 10) / 10,
       football: Math.round(footballEquiv * 10) / 10,
       spin: Math.round(spinKm * 10) / 10,
-      plan: 0, // merged with training plan on the client side
+      plan: 0,
       longRun: Math.round(longRun * 10) / 10,
       avgHR,
       z2: avgZ2,
       avgPace: avgPaceStr,
     });
 
-    // Build daily actuals for Training Plan view
     const dayMap = {};
     for (const act of acts) {
       const dow = dayKeys[new Date(act.date).getUTCDay()];
