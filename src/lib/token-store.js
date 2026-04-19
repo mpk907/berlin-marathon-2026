@@ -21,6 +21,7 @@ export async function saveTokens({ accessToken, refreshToken, expiresIn }) {
   await put(TOKEN_BLOB_PATH, JSON.stringify(data), {
     access: "private",
     addRandomSuffix: false,
+    allowOverwrite: true,
     contentType: "application/json",
   });
 
