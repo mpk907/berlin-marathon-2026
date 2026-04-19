@@ -21,6 +21,8 @@ export async function GET(request) {
   // Scopes: read workouts + offline (for refresh token)
   const scopes = [
     "read:workout",
+    "read:recovery",
+    "read:cycles",
     "read:profile",
     "read:body_measurement",
     "offline",

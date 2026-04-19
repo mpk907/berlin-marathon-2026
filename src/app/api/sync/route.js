@@ -45,7 +45,6 @@ async function refreshOAuthToken(refreshToken) {
         refresh_token: refreshToken,
         client_id: clientId,
         client_secret: clientSecret,
-        scope: "read:workout read:profile read:body_measurement offline",
       }),
     });
 
