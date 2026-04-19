@@ -14,7 +14,7 @@ const SPORT_ID_MAP = {
   30: "Football",                   // soccer
   44: "Other", 48: "Other",        // functional fitness, HIIT
   71: "Other",                      // strength training
-  -1: "Other",                      // unspecified
+  "-1": "Other",                     // unspecified
 };
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
