@@ -37,10 +37,10 @@ export async function loadTokens() {
     const result = await get(TOKEN_BLOB_PATH, { access: "private" });
 
     if (!result || result.statusCode === 404) return null;
+    if (!result.stream) return null;
 
-    const text = await result.stream
-      ? new Response(result.stream).text()
-      : null;
+    const response = new Response(result.stream);
+    const text = await response.text();
 
     if (!text) return null;
 
