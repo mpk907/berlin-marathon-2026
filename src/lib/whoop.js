@@ -1,10 +1,10 @@
 // ═══════════════════════════════════════════════════
-// WHOOP Developer API v1 Client
-// Uses OAuth2 tokens (not Cognito) for Berlin Marathon Dashboard
-// Endpoints: /developer/v1/activity/workout, /developer/v1/cycle
+// WHOOP API v1 Client
+// Uses OAuth2 tokens for Berlin Marathon Dashboard
+// Endpoints: /v1/workout, /v1/cycle
 // ═══════════════════════════════════════════════════
 
-const API_BASE = "https://api.prod.whoop.com/developer/v1";
+const API_BASE = "https://api.prod.whoop.com/v1";
 
 // sport_id → our tracker Type
 const SPORT_ID_MAP = {
@@ -40,7 +40,7 @@ export async function fetchActivities(accessToken, startDate, endDate) {
     });
     if (nextToken) params.set("nextToken", nextToken);
 
-    const resp = await fetch(`${API_BASE}/activity/workout/collection?${params}`, {
+    const resp = await fetch(`${API_BASE}/workout?${params}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -55,8 +55,13 @@ export async function fetchActivities(accessToken, startDate, endDate) {
     }
 
     const data = await resp.json();
+    console.log(`[whoop] Workout response keys: ${Object.keys(data).join(", ")}`);
     const records = data.records || [];
     console.log(`[whoop] Page ${pageCount + 1}: ${records.length} workouts`);
+    if (records.length > 0) {
+      console.log(`[whoop] First workout keys: ${Object.keys(records[0]).join(", ")}`);
+      console.log(`[whoop] First workout sport_id: ${records[0].sport_id}, score_state: ${records[0].score_state}`);
+    }
 
     for (const w of records) {
       if (!w.start || !w.end) continue;
@@ -132,7 +137,7 @@ export async function fetchActivities(accessToken, startDate, endDate) {
       });
     }
 
-    nextToken = data.next_token || null;
+    nextToken = data.next_token || data.nextToken || null;
     pageCount++;
   } while (nextToken && pageCount < MAX_PAGES);
 
@@ -150,7 +155,7 @@ export async function fetchActivities(accessToken, startDate, endDate) {
       });
       if (cycleNext) params.set("nextToken", cycleNext);
 
-      const resp = await fetch(`${API_BASE}/cycle/collection?${params}`, {
+      const resp = await fetch(`${API_BASE}/cycle?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -167,7 +172,7 @@ export async function fetchActivities(accessToken, startDate, endDate) {
         };
       }
 
-      cycleNext = data.next_token || null;
+      cycleNext = data.next_token || data.nextToken || null;
       cyclePage++;
     } while (cycleNext && cyclePage < MAX_PAGES);
 
