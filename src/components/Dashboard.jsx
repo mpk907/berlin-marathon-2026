@@ -54,7 +54,7 @@ const DayCell = ({ planned, actual, isPast, isFuture, detail }) => {
 // HR Zone reference card component (uses static import — zones are constant)
 const ZoneCard = () => (
   <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-    <h4 className="text-sm font-semibold text-slate-700 mb-3">HR Zone Reference (Karvonen)</h4>
+    <h4 className="text-sm font-semibold text-slate-700 mb-3">HR Zone Reference (WHOOP)</h4>
     <div className="space-y-2">
       {Object.values(staticHrZones).map(z => (
         <div key={z.name} className="flex items-center gap-3">
@@ -71,7 +71,7 @@ const ZoneCard = () => (
       ))}
     </div>
     <div className="mt-3 p-2 bg-blue-50 rounded text-xs text-blue-700">
-      Max HR: ~182 bpm · Resting: ~55 bpm · Easy run target: Z2 (109-127)
+      Max HR: ~182 bpm · Resting: ~55 bpm · Easy run target: Z2 (127-146)
     </div>
   </div>
 );
@@ -532,8 +532,8 @@ export default function Dashboard() {
                     <XAxis dataKey="week" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} domain={[0, 36]} />
                     <Tooltip formatter={(val) => val ? [`${Number(val).toFixed(1)} km`] : "—"} />
-                    <Line type="monotone" dataKey="km" stroke="#1565C0" strokeWidth={2.5} dot={{ r: 4 }} name="Actual" connectNulls={false} />
-                    <Line type="monotone" dataKey="projected" stroke="#90CAF9" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Needed Trajectory" />
+                    <Line type="monotone" dataKey="actual" stroke="#1565C0" strokeWidth={2.5} dot={{ r: 4 }} name="Actual" connectNulls={false} />
+                    <Line type="monotone" dataKey="plan" stroke="#90CAF9" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Plan" connectNulls />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -853,12 +853,12 @@ export default function Dashboard() {
                     <XAxis dataKey="week" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} domain={[120, 160]} />
                     <Tooltip formatter={(val) => [`${val} bpm`]} />
-                    {/* Z2 band (WHOOP: 109-127 bpm) */}
-                    <Area type="monotone" dataKey={() => 127} fill="#E8F5E9" stroke="none" name="Z2 ceiling" />
-                    <Area type="monotone" dataKey={() => 109} fill="#ffffff" stroke="none" />
+                    {/* Z2 band (WHOOP: 127-146 bpm) */}
+                    <Area type="monotone" dataKey={() => 146} fill="#E8F5E9" stroke="none" name="Z2 ceiling" />
+                    <Area type="monotone" dataKey={() => 127} fill="#ffffff" stroke="none" />
                     <Line type="monotone" dataKey="avgHR" stroke="#E91E63" strokeWidth={2.5} dot={{ r: 4 }} name="Avg HR" />
-                    <Line type="monotone" dataKey={() => 127} stroke="#66BB6A" strokeWidth={1} strokeDasharray="4 4" dot={false} name="Z2 ceiling (127)" />
-                    <Line type="monotone" dataKey={() => 109} stroke="#90CAF9" strokeWidth={1} strokeDasharray="4 4" dot={false} name="Z2 floor (109)" />
+                    <Line type="monotone" dataKey={() => 146} stroke="#66BB6A" strokeWidth={1} strokeDasharray="4 4" dot={false} name="Z2 ceiling (146)" />
+                    <Line type="monotone" dataKey={() => 127} stroke="#90CAF9" strokeWidth={1} strokeDasharray="4 4" dot={false} name="Z2 floor (127)" />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -868,7 +868,7 @@ export default function Dashboard() {
 
             <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
               <h3 className="text-sm font-semibold text-slate-700 mb-1">Zone 2 % Trend</h3>
-              <p className="text-xs text-slate-400 mb-4">Percentage of run time in WHOOP Z2 (HR 109-127). Target: 70%+ for marathon base building.</p>
+              <p className="text-xs text-slate-400 mb-4">Percentage of run time in WHOOP Z2 (HR 127-146). Target: 70%+ for marathon base building.</p>
               <ResponsiveContainer width="100%" height={300}>
                 <ComposedChart data={z2TrendData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
