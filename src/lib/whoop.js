@@ -93,10 +93,10 @@ export async function fetchActivities(accessToken, startDate, endDate) {
       const avgHr = score.average_heart_rate || null;
       const maxHr = score.max_heart_rate || null;
 
-      // Zone percentages from zone_duration (milliseconds)
-      // WHOOP zones: zone_zero through zone_five
+      // Zone percentages from zone_durations (milliseconds)
+      // WHOOP v2 uses "zone_durations" (plural), v1 used "zone_duration" (singular)
       // Our mapping: Z1=zone_zero+zone_one, Z2=zone_two, Z3=zone_three, Z4=zone_four, Z5=zone_five
-      const zd = score.zone_duration || {};
+      const zd = score.zone_durations || score.zone_duration || {};
       const zones = [
         zd.zone_zero_milli || 0,
         zd.zone_one_milli || 0,

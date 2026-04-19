@@ -326,9 +326,9 @@ export default function Dashboard() {
         {/* Sync status bar */}
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-700">
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${dataSource === "whoop" ? "bg-emerald-400" : "bg-amber-400"}`}></div>
+            <div className={`w-2 h-2 rounded-full ${dataSource.startsWith("whoop") ? "bg-emerald-400" : "bg-amber-400"}`}></div>
             <span className="text-xs text-slate-400">
-              {dataSource === "whoop"
+              {dataSource.startsWith("whoop")
                 ? `WHOOP synced ${syncedAt ? new Date(syncedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}`
                 : "Static data — sync WHOOP to go live"}
             </span>
