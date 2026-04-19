@@ -3,6 +3,8 @@
 // Uses Vercel Blob in production, local JSON file in dev
 // ═══════════════════════════════════════════════════
 
+import { put, get } from "@vercel/blob";
+
 const BLOB_KEY = "whoop-activities.json";
 const SYNC_META_KEY = "whoop-sync-meta.json";
 
@@ -14,16 +16,31 @@ function hasBlobStorage() {
 }
 
 /**
+ * Read a JSON blob from Vercel Blob (private store).
+ * Uses the same pattern as token-store.js (which works).
+ */
+async function readBlob(key) {
+  const result = await get(key, { access: "private" });
+  if (!result || result.statusCode === 404) return null;
+  if (!result.stream) return null;
+  const response = new Response(result.stream);
+  const text = await response.text();
+  if (!text) return null;
+  return JSON.parse(text);
+}
+
+/**
  * Store activities data (Vercel Blob or in-memory fallback)
  */
 export async function storeActivities(data) {
   if (hasBlobStorage()) {
-    const { put } = await import("@vercel/blob");
     await put(BLOB_KEY, JSON.stringify(data), {
       access: "private",
       addRandomSuffix: false,
       allowOverwrite: true,
+      contentType: "application/json",
     });
+    console.log("[storage] Activities stored to blob");
     return { storage: "blob" };
   }
 
@@ -41,14 +58,11 @@ export async function storeActivities(data) {
 export async function getActivities() {
   if (hasBlobStorage()) {
     try {
-      const { get } = await import("@vercel/blob");
-      const blob = await get(BLOB_KEY);
-      if (!blob) return null;
-      const fetchUrl = blob.downloadUrl || blob.url;
-      const resp = await fetch(fetchUrl);
-      return await resp.json();
+      const data = await readBlob(BLOB_KEY);
+      console.log("[storage] Activities loaded from blob:", data ? "found" : "empty");
+      return data;
     } catch (e) {
-      console.error("[storage] Blob read error:", e);
+      console.error("[storage] Blob read error:", e.message);
       return null;
     }
   }
@@ -70,12 +84,13 @@ export async function getActivities() {
  */
 export async function storeSyncMeta(meta) {
   if (hasBlobStorage()) {
-    const { put } = await import("@vercel/blob");
     await put(SYNC_META_KEY, JSON.stringify(meta), {
       access: "private",
       addRandomSuffix: false,
       allowOverwrite: true,
+      contentType: "application/json",
     });
+    console.log("[storage] Sync meta stored to blob");
     return;
   }
 
@@ -92,13 +107,11 @@ export async function storeSyncMeta(meta) {
 export async function getSyncMeta() {
   if (hasBlobStorage()) {
     try {
-      const { get } = await import("@vercel/blob");
-      const blob = await get(SYNC_META_KEY);
-      if (!blob) return null;
-      const fetchUrl = blob.downloadUrl || blob.url;
-      const resp = await fetch(fetchUrl);
-      return await resp.json();
-    } catch {
+      const data = await readBlob(SYNC_META_KEY);
+      console.log("[storage] Sync meta loaded from blob:", data ? "found" : "empty");
+      return data;
+    } catch (e) {
+      console.error("[storage] Sync meta read error:", e.message);
       return null;
     }
   }
