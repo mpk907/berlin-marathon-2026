@@ -255,7 +255,8 @@ export function processActivities(activities) {
       ? Math.max(...runs.map(a => a.distance))
       : 0;
 
-    const hrValues = acts.filter(a => a.avgHr).map(a => a.avgHr);
+    // Average HR from runs only (non-run activities like strength/walking skew it low)
+    const hrValues = runs.filter(a => a.avgHr).map(a => a.avgHr);
     const avgHR = hrValues.length > 0
       ? Math.round(hrValues.reduce((a, b) => a + b, 0) / hrValues.length)
       : 0;
