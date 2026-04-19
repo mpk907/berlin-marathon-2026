@@ -40,7 +40,7 @@ export async function fetchActivities(accessToken, startDate, endDate) {
     });
     if (nextToken) params.set("nextToken", nextToken);
 
-    const resp = await fetch(`${API_BASE}/activity/workout?${params}`, {
+    const resp = await fetch(`${API_BASE}/activity/workout/collection?${params}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -150,7 +150,7 @@ export async function fetchActivities(accessToken, startDate, endDate) {
       });
       if (cycleNext) params.set("nextToken", cycleNext);
 
-      const resp = await fetch(`${API_BASE}/cycle?${params}`, {
+      const resp = await fetch(`${API_BASE}/cycle/collection?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
