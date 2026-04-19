@@ -71,7 +71,7 @@ const ZoneCard = () => (
       ))}
     </div>
     <div className="mt-3 p-2 bg-blue-50 rounded text-xs text-blue-700">
-      Max HR: ~182 bpm · Resting: ~55 bpm · Easy run target: Z2 (127-140)
+      Max HR: ~182 bpm · Resting: ~55 bpm · Easy run target: Z2 (109-127)
     </div>
   </div>
 );
@@ -219,17 +219,33 @@ export default function Dashboard() {
   }, [weeklyData]);
 
   const longRunProjection = useMemo(() => {
-    const data = weeklyData.filter(w => w.longRun && w.longRun > 0).map(w => ({ week: w.week, km: w.longRun }));
-    const lastLong = data.length ? data[data.length - 1] : { week: 14, km: 13.5 };
-    const targetWeek = 31;
-    const targetKm = 32;
-    const weeksLeft = Math.max(1, targetWeek - lastLong.week);
-    const increment = (targetKm - lastLong.km) / weeksLeft;
-    for (let w = lastLong.week + 1; w <= targetWeek; w++) {
-      data.push({ week: w, km: null, projected: Math.min(lastLong.km + increment * (w - lastLong.week), targetKm) });
+    // Extract planned long run km from training plan Sunday sessions
+    const planMap = {};
+    for (const wp of trainingPlan) {
+      // Use detail.sun.km if available, else parse Sunday session string
+      if (wp.detail?.sun?.km) {
+        planMap[wp.week] = wp.detail.sun.km;
+      } else if (wp.sun && wp.sun !== "Rest") {
+        const m = wp.sun.match(/^(\d+\.?\d*)/);
+        if (m) planMap[wp.week] = parseFloat(m[1]);
+      }
+    }
+    // Build actual long run map from weekly data
+    const actualMap = {};
+    for (const w of weeklyData) {
+      if (w.longRun && w.longRun > 0) actualMap[w.week] = w.longRun;
+    }
+    // Combine into dataset for all 38 weeks
+    const data = [];
+    for (let wk = 1; wk <= 38; wk++) {
+      const plan = planMap[wk] || null;
+      const actual = actualMap[wk] || null;
+      if (plan || actual) {
+        data.push({ week: wk, plan, actual });
+      }
     }
     return data;
-  }, [weeklyData]);
+  }, [weeklyData, trainingPlan]);
 
   // Zone 2 trend — include ALL weeks with data (not just z2 > 0)
   const z2TrendData = useMemo(() => {
@@ -809,16 +825,16 @@ export default function Dashboard() {
         {/* ═══ LONG RUN ═══ */}
         {activeTab === "longrun" && (
           <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4">Long Run Progression — need ~1.1 km/week increase to reach 32 km</h3>
+            <h3 className="text-sm font-semibold text-slate-700 mb-4">Long Run Progression — Plan vs Actual</h3>
             <ResponsiveContainer width="100%" height={400}>
               <ComposedChart data={longRunProjection}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="week" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} domain={[0, 36]} />
-                <Tooltip />
-                <Area type="monotone" dataKey="projected" fill="#E3F2FD" stroke="none" name="Target Zone" />
-                <Line type="monotone" dataKey="km" stroke="#1565C0" strokeWidth={3} dot={{ r: 5, fill: "#1565C0" }} name="Actual" connectNulls={false} />
-                <Line type="monotone" dataKey="projected" stroke="#90CAF9" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Needed" />
+                <XAxis dataKey="week" tick={{ fontSize: 11 }} label={{ value: "Week", position: "insideBottom", offset: -2, fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} domain={[0, 45]} unit=" km" />
+                <Tooltip formatter={(val, name) => [`${val} km`, name]} />
+                <Legend />
+                <Bar dataKey="actual" fill="#1565C0" name="Actual Long Run" radius={[3, 3, 0, 0]} barSize={14} />
+                <Line type="monotone" dataKey="plan" stroke="#90CAF9" strokeWidth={2.5} strokeDasharray="6 3" dot={{ r: 3, fill: "#90CAF9" }} name="Plan" connectNulls />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -837,12 +853,12 @@ export default function Dashboard() {
                     <XAxis dataKey="week" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} domain={[120, 160]} />
                     <Tooltip formatter={(val) => [`${val} bpm`]} />
-                    {/* Z2 band */}
-                    <Area type="monotone" dataKey={() => 140} fill="#E8F5E9" stroke="none" name="Z2 ceiling" />
-                    <Area type="monotone" dataKey={() => 127} fill="#ffffff" stroke="none" />
+                    {/* Z2 band (WHOOP: 109-127 bpm) */}
+                    <Area type="monotone" dataKey={() => 127} fill="#E8F5E9" stroke="none" name="Z2 ceiling" />
+                    <Area type="monotone" dataKey={() => 109} fill="#ffffff" stroke="none" />
                     <Line type="monotone" dataKey="avgHR" stroke="#E91E63" strokeWidth={2.5} dot={{ r: 4 }} name="Avg HR" />
-                    <Line type="monotone" dataKey={() => 140} stroke="#66BB6A" strokeWidth={1} strokeDasharray="4 4" dot={false} name="Z2 ceiling (140)" />
-                    <Line type="monotone" dataKey={() => 127} stroke="#90CAF9" strokeWidth={1} strokeDasharray="4 4" dot={false} name="Z2 floor (127)" />
+                    <Line type="monotone" dataKey={() => 127} stroke="#66BB6A" strokeWidth={1} strokeDasharray="4 4" dot={false} name="Z2 ceiling (127)" />
+                    <Line type="monotone" dataKey={() => 109} stroke="#90CAF9" strokeWidth={1} strokeDasharray="4 4" dot={false} name="Z2 floor (109)" />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -852,7 +868,7 @@ export default function Dashboard() {
 
             <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
               <h3 className="text-sm font-semibold text-slate-700 mb-1">Zone 2 % Trend</h3>
-              <p className="text-xs text-slate-400 mb-4">Percentage of run time in aerobic zone (HR 127-140). Target: 70%+ for marathon base building.</p>
+              <p className="text-xs text-slate-400 mb-4">Percentage of run time in WHOOP Z2 (HR 109-127). Target: 70%+ for marathon base building.</p>
               <ResponsiveContainer width="100%" height={300}>
                 <ComposedChart data={z2TrendData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
