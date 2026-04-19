@@ -9,6 +9,9 @@ import { getActivities, getSyncMeta } from "@/lib/storage";
 import { syncedWeeklyData, syncedWeeklyActuals, syncMeta } from "@/lib/synced-data";
 import { weeklyData as staticWeeklyData, weeklyActuals as staticWeeklyActuals, trainingPlan, hrZones } from "@/lib/data";
 
+// Prevent Vercel edge caching — this route reads from blob which changes on every sync
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   // 1. Try Vercel Blob (persisted by sync route)
   try {
