@@ -1,10 +1,10 @@
 // ═══════════════════════════════════════════════════
-// WHOOP API v1 Client
+// WHOOP API v2 Client
 // Uses OAuth2 tokens for Berlin Marathon Dashboard
-// Endpoints: /v1/workout, /v1/cycle
+// Endpoints: /developer/v2/activity/workout, /developer/v2/cycle
 // ═══════════════════════════════════════════════════
 
-const API_BASE = "https://api.prod.whoop.com/v1";
+const API_BASE = "https://api.prod.whoop.com/developer/v2";
 
 // sport_id → our tracker Type
 const SPORT_ID_MAP = {
@@ -40,7 +40,7 @@ export async function fetchActivities(accessToken, startDate, endDate) {
     });
     if (nextToken) params.set("nextToken", nextToken);
 
-    const resp = await fetch(`${API_BASE}/workout?${params}`, {
+    const resp = await fetch(`${API_BASE}/activity/workout?${params}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
