@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { fetchActivities, processActivities } from "@/lib/whoop";
 import { loadTokens, saveTokens } from "@/lib/token-store";
+import { storeActivities, storeSyncMeta } from "@/lib/storage";
 
 // CORS headers for cross-origin sync requests (e.g. from WHOOP tab bookmarklet)
 const corsHeaders = {
@@ -159,17 +160,29 @@ async function runSync(bodyToken = null) {
     const { weeklyData, weeklyActuals } = processActivities(activities);
     console.log(`[sync] Processed ${weeklyData.length} weeks with data`);
 
+    const syncedAt = new Date().toISOString();
+    const breakdown = {
+      runs: activities.filter(a => a.type === "Run").length,
+      football: activities.filter(a => a.type === "Football").length,
+      spin: activities.filter(a => a.type === "Spin").length,
+      other: activities.filter(a => a.type === "Other").length,
+    };
+
+    // Persist to Vercel Blob so /api/activities can read it
+    try {
+      await storeActivities({ weeklyData, weeklyActuals, activities });
+      await storeSyncMeta({ syncedAt, activitiesCount: activities.length, breakdown });
+      console.log("[sync] Persisted data to blob storage");
+    } catch (e) {
+      console.warn("[sync] Failed to persist to blob:", e.message);
+    }
+
     return withCors(NextResponse.json({
       status: "success",
-      syncedAt: new Date().toISOString(),
+      syncedAt,
       activitiesCount: activities.length,
       weeksWithData: weeklyData.length,
-      breakdown: {
-        runs: activities.filter(a => a.type === "Run").length,
-        football: activities.filter(a => a.type === "Football").length,
-        spin: activities.filter(a => a.type === "Spin").length,
-        other: activities.filter(a => a.type === "Other").length,
-      },
+      breakdown,
       weeklyData,
       weeklyActuals,
       activities,
