@@ -164,7 +164,8 @@ export default function Dashboard() {
     const totalPlan = completed.reduce((s, w) => s + (w.plan || 0), 0);
     const longRuns = completed.map(w => w.longRun).filter(x => x > 0);
     const longestRun = Math.max(...longRuns, 0);
-    const lastWeek = completed[completed.length - 1];
+    // Find the most recent week with actual activity (skip zero-data weeks)
+    const lastWeek = [...completed].reverse().find(w => (w.run || 0) + (w.football || 0) + (w.spin || 0) > 0) || completed[completed.length - 1];
     const lastWeekKm = lastWeek ? (lastWeek.run || 0) + (lastWeek.football || 0) + (lastWeek.spin || 0) : 0;
 
     // Dynamic weeks to race
@@ -598,20 +599,25 @@ export default function Dashboard() {
                   </thead>
                   <tbody>
                     {filteredPlan.map(w => {
-                      const isPast = w.week < currentWeek;
+                      const isPastWeek = w.week < currentWeek;
                       const isCurrent = w.week === currentWeek;
-                      const isFuture = w.week >= currentWeek;
+                      const isFutureWeek = w.week > currentWeek;
                       const actuals = weeklyActuals[w.week] || {};
                       const weekData = weeklyData.find(wd => wd.week === w.week);
                       const actualTotal = weekData ? (weekData.run || 0) + (weekData.football || 0) + (weekData.spin || 0) : null;
-                      const pct = isPast && weekData && w.total > 0 ? Math.round((actualTotal || 0) / w.total * 100) : null;
+                      const pct = (isPastWeek || isCurrent) && weekData && w.total > 0 ? Math.round((actualTotal || 0) / w.total * 100) : null;
                       const isExpanded = expandedWeek === w.week;
                       const detail = w.detail || {};
+
+                      // For current week: compute which day-of-week today is
+                      // days array = ["mon","tue","wed","thu","fri","sat","sun"]
+                      // JS getDay(): 0=Sun,1=Mon..6=Sat → remap to our index
+                      const todayDayIdx = isCurrent ? ((new Date().getDay() + 6) % 7) : -1;
 
                       return (
                         <React.Fragment key={w.week}>
                           <tr
-                            className={`border-b border-slate-50 cursor-pointer ${isCurrent ? "bg-blue-50" : isPast ? "bg-white" : w.notes?.includes("EASE") ? "bg-amber-50/30" : w.notes?.includes("TAPER") ? "bg-green-50/30" : w.notes?.includes("PEAK") ? "bg-red-50/30" : "bg-white"} hover:bg-slate-50`}
+                            className={`border-b border-slate-50 cursor-pointer ${isCurrent ? "bg-blue-50" : isPastWeek ? "bg-white" : w.notes?.includes("EASE") ? "bg-amber-50/30" : w.notes?.includes("TAPER") ? "bg-green-50/30" : w.notes?.includes("PEAK") ? "bg-red-50/30" : "bg-white"} hover:bg-slate-50`}
                             onClick={() => setExpandedWeek(isExpanded ? null : w.week)}>
                             <td className={`px-3 py-2 font-bold ${isCurrent ? "text-blue-700" : "text-slate-700"}`}>
                               {w.week}
@@ -619,7 +625,7 @@ export default function Dashboard() {
                             </td>
                             <td className="px-3 py-2 text-slate-500 text-xs">{w.dates}</td>
                             <td className="px-3 py-2 text-center">
-                              {isPast && actualTotal !== null ? (
+                              {(isPastWeek || isCurrent) && actualTotal !== null ? (
                                 <div>
                                   <div className={`font-bold ${pct >= 85 ? "text-emerald-600" : pct >= 50 ? "text-amber-600" : "text-red-500"}`}>
                                     {actualTotal.toFixed(0)}
@@ -630,21 +636,35 @@ export default function Dashboard() {
                                 <div className="font-bold text-slate-700">{w.total}</div>
                               )}
                             </td>
-                            {days.map(d => (
-                              <td key={d} className="px-2 py-2 text-center">
-                                <DayCell
-                                  planned={w[d]}
-                                  actual={actuals[d]}
-                                  isPast={isPast}
-                                  isFuture={isFuture}
-                                  detail={isFuture ? detail[d] : null}
-                                />
-                              </td>
-                            ))}
+                            {days.map((d, dayIdx) => {
+                              // Per-day past/future: past weeks are all past, future weeks all future
+                              // Current week: days up to today are past, days after today are future
+                              let dayIsPast, dayIsFuture;
+                              if (isPastWeek) {
+                                dayIsPast = true; dayIsFuture = false;
+                              } else if (isFutureWeek) {
+                                dayIsPast = false; dayIsFuture = true;
+                              } else {
+                                // Current week — compare day index
+                                dayIsPast = dayIdx <= todayDayIdx;
+                                dayIsFuture = dayIdx > todayDayIdx;
+                              }
+                              return (
+                                <td key={d} className="px-2 py-2 text-center">
+                                  <DayCell
+                                    planned={w[d]}
+                                    actual={actuals[d]}
+                                    isPast={dayIsPast}
+                                    isFuture={dayIsFuture}
+                                    detail={dayIsFuture ? detail[d] : null}
+                                  />
+                                </td>
+                              );
+                            })}
                             <td className="px-3 py-2">
                               <div className="flex items-center gap-2">
                                 {w.notes && <span className="text-xs text-slate-500">{w.notes}</span>}
-                                {isPast && pct !== null && <StatusBadge pct={pct} />}
+                                {(isPastWeek || isCurrent) && pct !== null && <StatusBadge pct={pct} />}
                                 {w.detail && <span className="text-xs text-blue-400">{isExpanded ? "▼" : "▶"}</span>}
                               </div>
                             </td>
