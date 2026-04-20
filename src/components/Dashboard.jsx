@@ -175,19 +175,120 @@ export default function Dashboard() {
 
     const consistency = completed.filter(w => (w.run || 0) + (w.football || 0) + (w.spin || 0) > 5).length;
 
-    const conservativeMin = (7 + 5/60) * 42.195;
-    const targetMin = (6 + 45/60) * 42.195;
-    const optimisticMin = (6 + 25/60) * 42.195;
-
     const fmt = (m) => `${Math.floor(m/60)}:${String(Math.round(m%60)).padStart(2,"0")}`;
-
     const lastPace = lastWeek?.avgPace || null;
+
+    // ═══ DYNAMIC MARATHON PROJECTION ═══
+    // Parse pace strings ("7:31") into decimal minutes
+    const parsePace = (p) => { if (!p) return null; const [m, s] = p.split(":").map(Number); return m + s / 60; };
+
+    // Collect all weeks with valid pace data, sorted by week
+    const paceWeeks = completed
+      .filter(w => w.avgPace && (w.run || 0) > 3) // need meaningful run volume
+      .map(w => ({ week: w.week, pace: parsePace(w.avgPace), longRun: w.longRun || 0, run: w.run || 0, z2: w.z2 || 0 }))
+      .sort((a, b) => a.week - b.week);
+
+    let projConservativeMin, projTargetMin, projOptimisticMin;
+    let projMethod = "insufficient";
+    let projPaceKm = null; // projected race pace per km
+    let projTrend = null; // pace improvement per week (negative = getting faster)
+    let adherencePct = totalPlan > 0 ? Math.round(totalAll / totalPlan * 100) : 0;
+
+    if (paceWeeks.length >= 3) {
+      projMethod = "dynamic";
+
+      // 1. Weighted linear regression on pace (recent weeks count more)
+      // Weight = week number (higher = more recent = more weight)
+      const n = paceWeeks.length;
+      let sumW = 0, sumWX = 0, sumWY = 0, sumWXX = 0, sumWXY = 0;
+      for (const pw of paceWeeks) {
+        const weight = pw.week; // more recent = higher weight
+        sumW += weight;
+        sumWX += weight * pw.week;
+        sumWY += weight * pw.pace;
+        sumWXX += weight * pw.week * pw.week;
+        sumWXY += weight * pw.week * pw.pace;
+      }
+      const denom = sumW * sumWXX - sumWX * sumWX;
+      const slope = denom !== 0 ? (sumW * sumWXY - sumWX * sumWY) / denom : 0;
+      const intercept = denom !== 0 ? (sumWY * sumWXX - sumWX * sumWXY) / denom : paceWeeks[n - 1].pace;
+      projTrend = slope; // negative = improving
+
+      // Race week is ~38
+      const raceWeek = 38;
+      // Projected pace at race week (extrapolate trend, but cap improvement)
+      const maxImprovement = 0.04; // max 4 sec/km improvement per week
+      const cappedSlope = slope < -maxImprovement ? -maxImprovement : slope;
+      const trendPace = intercept + cappedSlope * raceWeek;
+
+      // 2. Current pace (weighted avg of last 4 weeks with data)
+      const recentWeeks = paceWeeks.slice(-4);
+      const recentPaceSum = recentWeeks.reduce((s, w) => s + w.pace * w.run, 0);
+      const recentRunSum = recentWeeks.reduce((s, w) => s + w.run, 0);
+      const currentPace = recentRunSum > 0 ? recentPaceSum / recentRunSum : paceWeeks[n - 1].pace;
+
+      // 3. Riegel's formula: use longest run to estimate marathon capability
+      // T_marathon = T_reference × (42.195 / D_reference)^1.06
+      // If longest run is 13.5km at 7:49/km pace → reference time = 13.5 * 7.82 min
+      const longestRunWeek = paceWeeks.reduce((best, w) => w.longRun > (best?.longRun || 0) ? w : best, null);
+      let riegelPace = currentPace * 1.08; // fallback: add 8% for marathon distance
+      if (longestRunWeek && longestRunWeek.longRun >= 8) {
+        const refDist = longestRunWeek.longRun;
+        const refPace = longestRunWeek.pace;
+        const refTime = refDist * refPace;
+        const marathonTime = refTime * Math.pow(42.195 / refDist, 1.06);
+        riegelPace = marathonTime / 42.195;
+      }
+
+      // 4. Adherence adjustment: if training compliance is high, trust optimistic end more
+      const adherenceFactor = Math.min(1, adherencePct / 100); // 0 to 1
+
+      // 5. Build three scenarios
+      // Conservative: current easy pace + distance fatigue factor (no further improvement assumed)
+      // Easy runs are typically 60-90s slower than marathon pace, but we use Riegel as floor
+      const conservativePace = Math.max(riegelPace, currentPace * 1.05);
+
+      // Target: trend extrapolation + Riegel blend, weighted by adherence
+      // More adherence → trust the trend more; less → stay closer to conservative
+      const trendWeight = 0.3 + 0.3 * adherenceFactor; // 0.3 to 0.6
+      const targetPace = trendPace * trendWeight + riegelPace * (1 - trendWeight);
+
+      // Optimistic: if trend holds AND training ramps up well
+      // Assume pace improves at current trend, longest run reaches 30+ km
+      const optimisticPace = Math.min(targetPace * 0.96, trendPace * 0.98);
+
+      // Sanity bounds: no slower than 9:00/km, no faster than 5:00/km
+      const clamp = (p) => Math.max(5, Math.min(9, p));
+
+      projConservativeMin = clamp(conservativePace) * 42.195;
+      projTargetMin = clamp(targetPace) * 42.195;
+      projOptimisticMin = clamp(optimisticPace) * 42.195;
+      projPaceKm = clamp(targetPace);
+
+      // Ensure ordering: optimistic < target < conservative
+      if (projOptimisticMin > projTargetMin) projOptimisticMin = projTargetMin * 0.97;
+      if (projTargetMin > projConservativeMin) projTargetMin = projConservativeMin * 0.95;
+    } else {
+      // Not enough data — use reasonable defaults based on whatever we have
+      const fallbackPace = paceWeeks.length > 0 ? parsePace(paceWeeks[paceWeeks.length - 1].pace) : 8.0;
+      projConservativeMin = (fallbackPace * 1.10) * 42.195;
+      projTargetMin = (fallbackPace * 1.02) * 42.195;
+      projOptimisticMin = (fallbackPace * 0.95) * 42.195;
+    }
+
+    // Format pace per km for display
+    const fmtPace = (p) => { const m = Math.floor(p); const s = Math.round((p - m) * 60); return `${m}:${String(s).padStart(2, "0")}`; };
+    const projTargetPace = projPaceKm ? fmtPace(projPaceKm) : null;
+    const projConservativePace = fmtPace(projConservativeMin / 42.195);
+    const projOptimisticPace = fmtPace(projOptimisticMin / 42.195);
 
     return {
       totalRun, totalFB, totalSpin, totalAll, totalPlan, longestRun, lastWeekKm, lastWeekPlan: lastWeek?.plan || 0, lastPace, weeksToRace, consistency,
-      projConservative: fmt(conservativeMin),
-      projTarget: fmt(targetMin),
-      projOptimistic: fmt(optimisticMin),
+      projConservative: fmt(projConservativeMin),
+      projTarget: fmt(projTargetMin),
+      projOptimistic: fmt(projOptimisticMin),
+      projConservativePace, projTargetPace, projOptimisticPace,
+      projMethod, projTrend, adherencePct,
       completed: completed.length,
     };
   }, [weeklyData]);
@@ -557,27 +658,49 @@ export default function Dashboard() {
 
             {/* Projection callout */}
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-5 border border-blue-100">
-              <h3 className="text-sm font-semibold text-blue-800 mb-2">Marathon Projection — Reality Check</h3>
+              <h3 className="text-sm font-semibold text-blue-800 mb-2">
+                Marathon Projection
+                {stats.projMethod === "dynamic" && <span className="ml-2 text-xs font-normal text-blue-500 bg-blue-100 px-2 py-0.5 rounded-full">Live</span>}
+              </h3>
               <div className="grid grid-cols-3 gap-4 mb-3">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">{stats.projOptimistic}</div>
                   <div className="text-xs text-blue-400">Optimistic</div>
-                  <div className="text-xs text-slate-500 mt-1">~6:25/km · Perfect training</div>
+                  <div className="text-xs text-slate-500 mt-1">~{stats.projOptimisticPace}/km</div>
                 </div>
                 <div className="text-center border-x border-blue-200 px-4">
                   <div className="text-2xl font-bold text-blue-800">{stats.projTarget}</div>
                   <div className="text-xs text-blue-600 font-medium">Target</div>
-                  <div className="text-xs text-slate-500 mt-1">~6:45/km · 80%+ compliance</div>
+                  <div className="text-xs text-slate-500 mt-1">~{stats.projTargetPace || "—"}/km</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">{stats.projConservative}</div>
                   <div className="text-xs text-blue-400">Conservative</div>
-                  <div className="text-xs text-slate-500 mt-1">~7:05/km · Current trajectory</div>
+                  <div className="text-xs text-slate-500 mt-1">~{stats.projConservativePace}/km</div>
                 </div>
               </div>
               <div className="text-xs text-slate-600 space-y-1">
-                <div>For 4:45 target: run 3-4x/week, build to 50km peak, complete 2× 30km long runs, 70%+ in Z2</div>
-                <div className="text-amber-700">Current training: ~55% plan adherence, 14 km/wk avg, longest run 13.5 km — needs to improve significantly</div>
+                {stats.projMethod === "dynamic" ? (
+                  <>
+                    <div>
+                      Based on {stats.completed} weeks of data · Longest run: {stats.longestRun.toFixed(1)} km · Plan adherence: {stats.adherencePct}%
+                      {stats.projTrend !== null && (
+                        <span className={stats.projTrend < 0 ? " text-emerald-600" : " text-amber-600"}>
+                          {" "}· Pace trend: {stats.projTrend < 0 ? "improving" : "slowing"} ~{Math.abs(stats.projTrend * 60).toFixed(0)}s/km per week
+                        </span>
+                      )}
+                    </div>
+                    <div className={stats.adherencePct >= 80 ? "text-emerald-700" : stats.adherencePct >= 60 ? "text-amber-700" : "text-red-700"}>
+                      {stats.adherencePct >= 80
+                        ? "Strong compliance — projections are reliable. Keep building toward peak weeks."
+                        : stats.adherencePct >= 60
+                        ? "Moderate compliance — target is achievable if consistency improves over the next training blocks."
+                        : `Low compliance (${stats.adherencePct}%) — projections carry more uncertainty. Focus on building consistent weekly volume.`}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-amber-700">Not enough run data yet for dynamic projection. Keep logging runs — projections activate after 3+ weeks of data.</div>
+                )}
               </div>
             </div>
           </div>
