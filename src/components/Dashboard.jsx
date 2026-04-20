@@ -290,39 +290,44 @@ export default function Dashboard() {
       projTargetMin = projTargetPaceKm * 42.195;
       projConservativeMin = projConservativePaceKm * 42.195;
 
-      // ── Step 6: Trend detection ──
-      // Compare projection inputs from first half vs second half of completed weeks
-      if (paceWeeks.length >= 6) {
-        const firstHalf = paceWeeks.slice(0, Math.floor(paceWeeks.length / 2));
-        const secondHalf = paceWeeks.slice(Math.floor(paceWeeks.length / 2));
-        // Earned credit per week in each half
-        const creditPerWeek = (weeks) => {
-          let c = 0;
-          for (const pw of weeks) {
-            let wc = 0;
-            wc += Math.min(1, pw.plan > 0 ? pw.run / pw.plan : 0.5) * 0.4;
-            wc += Math.min(1, pw.z2 / 0.7) * 0.3;
-            wc += Math.min(1, pw.longRun / 15) * 0.3;
-            c += wc;
-          }
-          return c / weeks.length;
-        };
-        const firstRate = creditPerWeek(firstHalf);
-        const secondRate = creditPerWeek(secondHalf);
-        const rateChange = secondRate - firstRate;
-        if (rateChange > 0.05) {
-          projTrend = "improving";
-          projTrendDetail = "Training quality is rising — projections will keep improving";
-        } else if (rateChange < -0.05) {
-          projTrend = "declining";
-          projTrendDetail = "Recent training quality dipped — get back on track to hold these numbers";
-        } else {
-          projTrend = "stable";
-          projTrendDetail = "Steady training — consistency is your superpower right now";
+      // ── Step 6: Week-over-week trend ──
+      // Recompute target projection WITHOUT the latest week to get last week's number
+      // Delta = previous target - current target (positive = improved)
+      let projDeltaMin = 0; // minutes improved vs previous week (positive = faster)
+      if (paceWeeks.length >= 4) {
+        const prevWeeks = paceWeeks.slice(0, -1);
+        const prevRecent = prevWeeks.slice(-4);
+        const prevPaceSum = prevRecent.reduce((s, w) => s + w.pace * w.run, 0);
+        const prevRunSum = prevRecent.reduce((s, w) => s + w.run, 0);
+        const prevEasyPace = prevRunSum > 0 ? prevPaceSum / prevRunSum : prevWeeks[prevWeeks.length - 1].pace;
+        const prevBaseline = prevEasyPace - 0.75;
+        let prevEarned = 0;
+        for (const pw of prevWeeks) {
+          let wc = 0;
+          wc += Math.min(1, pw.plan > 0 ? pw.run / pw.plan : 0.5) * 0.4;
+          wc += Math.min(1, pw.z2 / 0.7) * 0.3;
+          wc += Math.min(1, pw.longRun / 15) * 0.3;
+          prevEarned += wc * maxCreditPerWeek;
         }
+        const prevWeekNum = Math.max(...prevWeeks.map(w => w.week));
+        const prevRemaining = Math.max(0, 38 - prevWeekNum);
+        const prevProgress = prevWeekNum / 38;
+        const prevFutureTrust = 0.1 + prevProgress * 0.5;
+        const prevTargetFuture = prevRemaining * futureCreditPerWeek * prevFutureTrust * 0.85;
+        const prevTargetPace = prevBaseline - prevEarned - prevTargetFuture;
+        const prevTargetMin = Math.max(5.0, Math.min(8.5, prevTargetPace)) * 42.195;
+        projDeltaMin = prevTargetMin - projTargetMin; // positive = got faster
+      }
+
+      if (projDeltaMin > 0.5) {
+        projTrend = "improving";
+        projTrendDetail = `${Math.round(projDeltaMin)} min faster than last week`;
+      } else if (projDeltaMin < -0.5) {
+        projTrend = "declining";
+        projTrendDetail = `${Math.round(Math.abs(projDeltaMin))} min slower than last week`;
       } else {
-        projTrend = "building";
-        projTrendDetail = "Building baseline — every good week sharpens the projection";
+        projTrend = "stable";
+        projTrendDetail = "Holding steady vs last week";
       }
 
     } else {
@@ -348,6 +353,7 @@ export default function Dashboard() {
       projTargetPace: fmtPace(projTargetPaceKm),
       projOptimisticPace: fmtPace(projOptimisticPaceKm),
       projMethod, adherencePct, projTrend, projTrendDetail,
+      projDeltaMin: typeof projDeltaMin !== 'undefined' ? projDeltaMin : 0,
       earnedMinutes: Math.round(earnedMinutes),
       currentEasyPace: paceWeeks.length >= 3 ? fmtPace((() => { const rw = paceWeeks.slice(-4); const s = rw.reduce((a, w) => a + w.pace * w.run, 0); const r = rw.reduce((a, w) => a + w.run, 0); return r > 0 ? s / r : 0; })()) : null,
       completed: completed.length,
@@ -495,7 +501,24 @@ export default function Dashboard() {
             <div className="text-sm text-slate-400 mb-1">Projected finish</div>
             <div className="flex items-baseline gap-3">
               <div className="text-sm text-slate-500">{stats.projOptimistic}</div>
-              <div className="text-2xl sm:text-3xl font-bold text-white">{stats.projTarget}</div>
+              <div className="flex items-center gap-2">
+                <div className="text-2xl sm:text-3xl font-bold text-white">{stats.projTarget}</div>
+                {stats.projMethod === "dynamic" && stats.projDeltaMin !== 0 && (
+                  <div className={`flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded ${
+                    stats.projDeltaMin > 0
+                      ? "text-emerald-300 bg-emerald-500/20"
+                      : "text-red-300 bg-red-500/20"
+                  }`}>
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                      {stats.projDeltaMin > 0
+                        ? <path d="M5 1L9 6H1L5 1Z" />
+                        : <path d="M5 9L1 4H9L5 9Z" />
+                      }
+                    </svg>
+                    {Math.round(Math.abs(stats.projDeltaMin))}m
+                  </div>
+                )}
+              </div>
               <div className="text-sm text-slate-500">{stats.projConservative}</div>
             </div>
             <div className="text-slate-500 text-xs mt-0.5">optimistic · target · conservative</div>
@@ -724,15 +747,24 @@ export default function Dashboard() {
                   Race Day Projection
                   {stats.projMethod === "dynamic" && <span className="ml-2 text-xs font-normal text-blue-500 bg-blue-100 px-2 py-0.5 rounded-full">Live</span>}
                 </h3>
-                {stats.projTrend && (
-                  <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${
-                    stats.projTrend === "improving" ? "bg-emerald-100 text-emerald-700" :
-                    stats.projTrend === "stable" ? "bg-blue-100 text-blue-700" :
-                    stats.projTrend === "declining" ? "bg-amber-100 text-amber-700" :
-                    "bg-slate-100 text-slate-600"
+                {stats.projMethod === "dynamic" && stats.projDeltaMin !== 0 && (
+                  <div className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full ${
+                    stats.projDeltaMin > 0
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-red-100 text-red-700"
                   }`}>
-                    <span>{stats.projTrend === "improving" ? "▲" : stats.projTrend === "declining" ? "▼" : stats.projTrend === "stable" ? "→" : "◆"}</span>
-                    <span className="capitalize">{stats.projTrend}</span>
+                    <svg width="12" height="12" viewBox="0 0 10 10" fill="currentColor">
+                      {stats.projDeltaMin > 0
+                        ? <path d="M5 1L9 6H1L5 1Z" />
+                        : <path d="M5 9L1 4H9L5 9Z" />
+                      }
+                    </svg>
+                    {Math.round(Math.abs(stats.projDeltaMin))} min vs last week
+                  </div>
+                )}
+                {stats.projMethod === "dynamic" && stats.projDeltaMin === 0 && (
+                  <div className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-slate-100 text-slate-600">
+                    → Holding steady
                   </div>
                 )}
               </div>
