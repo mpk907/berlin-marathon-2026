@@ -10,9 +10,9 @@ import {
 } from "@/lib/data";
 
 const KPI = ({ label, value, sub, color = "text-slate-800" }) => (
-  <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
+  <div className="bg-white rounded-xl p-3 sm:p-5 shadow-sm border border-slate-100">
     <div className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">{label}</div>
-    <div className={`text-3xl font-bold ${color}`}>{value}</div>
+    <div className={`text-xl sm:text-3xl font-bold ${color}`}>{value}</div>
     {sub && <div className="text-xs text-slate-400 mt-1">{sub}</div>}
   </div>
 );
@@ -323,17 +323,17 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white px-8 py-6">
-        <div className="flex items-center justify-between">
+      <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white px-4 sm:px-8 py-4 sm:py-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold">Berlin Marathon 2026</h1>
+            <h1 className="text-xl sm:text-2xl font-bold">Berlin Marathon 2026</h1>
             <p className="text-slate-400 text-sm mt-1">28 September 2026 · {stats.weeksToRace} weeks to go</p>
           </div>
-          <div className="text-right">
+          <div className="sm:text-right">
             <div className="text-sm text-slate-400 mb-1">Projected finish</div>
             <div className="flex items-baseline gap-3">
               <div className="text-sm text-slate-500">{stats.projOptimistic}</div>
-              <div className="text-3xl font-bold text-white">{stats.projTarget}</div>
+              <div className="text-2xl sm:text-3xl font-bold text-white">{stats.projTarget}</div>
               <div className="text-sm text-slate-500">{stats.projConservative}</div>
             </div>
             <div className="text-slate-500 text-xs mt-0.5">optimistic · target · conservative</div>
@@ -389,16 +389,16 @@ export default function Dashboard() {
 
       {/* ═══ NEXT TRAINING — hero card ═══ */}
       {nextTraining && (
-        <div className="px-8 -mt-3 mb-4">
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-6 shadow-lg text-white">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-sm font-medium text-blue-200 uppercase tracking-wider">Next Training</span>
+        <div className="px-4 sm:px-8 -mt-3 mb-4">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-4 sm:p-6 shadow-lg text-white">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
+                  <span className="text-xs sm:text-sm font-medium text-blue-200 uppercase tracking-wider">Next Training</span>
                   <span className="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full">{nextTraining.when}</span>
-                  <span className="text-blue-200 text-sm">{nextTraining.dateStr}</span>
+                  <span className="text-blue-200 text-xs sm:text-sm">{nextTraining.dateStr}</span>
                 </div>
-                <div className="text-3xl font-bold mb-1">{nextTraining.session}</div>
+                <div className="text-2xl sm:text-3xl font-bold mb-1">{nextTraining.session}</div>
                 {nextTraining.weekNotes && (
                   <div className="text-blue-200 text-sm">Week {nextTraining.week} · {nextTraining.weekNotes}</div>
                 )}
@@ -406,17 +406,17 @@ export default function Dashboard() {
 
               {/* Detail cards */}
               {nextTraining.detail && (
-                <div className="flex gap-4 ml-6">
+                <div className="flex gap-4 sm:gap-4 sm:ml-6 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/20">
                   {nextTraining.detail.km > 0 && (
                     <div className="text-center">
-                      <div className="text-3xl font-bold">{nextTraining.detail.km}</div>
+                      <div className="text-2xl sm:text-3xl font-bold">{nextTraining.detail.km}</div>
                       <div className="text-blue-200 text-xs">km</div>
                     </div>
                   )}
                   <div className="w-px bg-white/20"></div>
                   {nextTraining.detail.hr && (
                     <div className="text-center min-w-0">
-                      <div className="text-lg font-bold flex items-center gap-1">
+                      <div className="text-base sm:text-lg font-bold flex items-center gap-1 whitespace-nowrap">
                         <span className="text-red-300">♥</span> {nextTraining.detail.hr}
                       </div>
                       <div className="text-blue-200 text-xs">HR zone</div>
@@ -425,7 +425,7 @@ export default function Dashboard() {
                   <div className="w-px bg-white/20"></div>
                   {nextTraining.detail.pace && (
                     <div className="text-center min-w-0">
-                      <div className="text-lg font-bold flex items-center gap-1">
+                      <div className="text-base sm:text-lg font-bold flex items-center gap-1 whitespace-nowrap">
                         <span className="text-yellow-300">⏱</span> {nextTraining.detail.pace}
                       </div>
                       <div className="text-blue-200 text-xs">pace target</div>
@@ -437,7 +437,7 @@ export default function Dashboard() {
 
             {/* Session type badge */}
             {nextTraining.detail?.type && (
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className={`text-xs font-bold px-3 py-1 rounded-full ${
                   nextTraining.detail.type === "easy" || nextTraining.detail.type === "easy/long" ? "bg-green-400/30 text-green-100" :
                   nextTraining.detail.type === "long" || nextTraining.detail.type === "long easy" ? "bg-blue-400/30 text-blue-100" :
@@ -458,8 +458,8 @@ export default function Dashboard() {
       )}
 
       {/* KPI Strip */}
-      <div className="px-8">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+      <div className="px-4 sm:px-8">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-4 lg:grid-cols-6">
           <KPI label="Total Volume" value={`${stats.totalAll.toFixed(0)} km`} sub={`🏃${stats.totalRun.toFixed(0)} ⚽${stats.totalFB.toFixed(0)} 🚴${stats.totalSpin.toFixed(0)}`} />
           <KPI label="Last Week" value={`${stats.lastWeekKm.toFixed(1)} km`} sub={`Plan: ${stats.lastWeekPlan} km`} color={stats.lastWeekKm >= stats.lastWeekPlan * 0.8 ? "text-emerald-600" : "text-amber-600"} />
           <KPI label="Longest Run" value={`${stats.longestRun.toFixed(1)} km`} sub="Target: 32 km by Week 31" color={stats.longestRun >= 20 ? "text-emerald-600" : "text-amber-600"} />
@@ -470,11 +470,11 @@ export default function Dashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="px-8 mt-6">
-        <div className="flex gap-1 bg-slate-200 rounded-lg p-1 w-fit">
+      <div className="px-4 sm:px-8 mt-6 overflow-x-auto -mx-4 sm:mx-0">
+        <div className="flex gap-1 bg-slate-200 rounded-lg p-1 w-max sm:w-fit mx-4 sm:mx-0">
           {tabs.map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === t.id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+              className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition whitespace-nowrap ${activeTab === t.id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
               {t.label}
             </button>
           ))}
@@ -482,7 +482,7 @@ export default function Dashboard() {
       </div>
 
       {/* Content */}
-      <div className="px-8 mt-4 pb-8">
+      <div className="px-4 sm:px-8 mt-4 pb-8">
 
         {/* ═══ OVERVIEW ═══ */}
         {activeTab === "overview" && (
@@ -772,8 +772,8 @@ export default function Dashboard() {
 
         {/* ═══ WEEKLY DETAIL ═══ */}
         {activeTab === "weekly" && (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-x-auto">
+            <table className="w-full text-sm min-w-[600px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
                   <th className="px-4 py-3 text-left font-medium text-slate-500">Week</th>
