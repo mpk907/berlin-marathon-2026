@@ -102,6 +102,7 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    // Load cached data first (fast)
     fetch("/api/activities")
       .then(r => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); })
       .then(data => {
@@ -113,6 +114,28 @@ export default function Dashboard() {
         if (data && data.weeklyActuals) setWeeklyActuals(data.weeklyActuals);
         if (data && data.trainingPlan) setTrainingPlan(data.trainingPlan);
         if (data && data.hrZones) setHrZones(data.hrZones);
+
+        // Auto-sync if data is stale (older than 6 hours)
+        const lastSync = data?.syncedAt ? new Date(data.syncedAt) : null;
+        const staleMs = 6 * 60 * 60 * 1000; // 6 hours
+        if (!lastSync || (Date.now() - lastSync.getTime()) > staleMs) {
+          console.log("[dashboard] Data stale, triggering background sync...");
+          fetch("/api/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+            .then(r => r.json())
+            .then(result => {
+              if (result.status === "success" && result.weeklyData?.length > 0) {
+                const planMap = {};
+                for (const p of (data?.trainingPlan || trainingPlan)) planMap[p.week] = p.total;
+                const merged = result.weeklyData.map(w => ({ ...w, plan: planMap[w.week] || 0 }));
+                setWeeklyData(merged);
+                setWeeklyActuals(result.weeklyActuals || {});
+                setDataSource("whoop");
+                setSyncedAt(result.syncedAt);
+                console.log(`[dashboard] Background sync complete: ${result.activitiesCount} activities`);
+              }
+            })
+            .catch(err => console.warn("[dashboard] Background sync failed:", err.message));
+        }
       })
       .catch((err) => { console.warn("Activities API fallback to static:", err.message); }); // Static fallback is already loaded
   }, []);
