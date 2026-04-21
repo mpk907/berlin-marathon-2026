@@ -101,6 +101,69 @@ export async function storeSyncMeta(meta) {
   await fs.writeFile(filePath, JSON.stringify(meta, null, 2));
 }
 
+// ═══════════════════════════════════════════════════
+// Training Plan Storage
+// ═══════════════════════════════════════════════════
+
+const PLAN_KEY = "training-plan.json";
+
+/**
+ * Store a custom training plan
+ * Saves the full plan array + metadata (who edited, when, why)
+ */
+export async function storePlan(plan, meta = {}) {
+  const payload = {
+    plan,
+    updatedAt: new Date().toISOString(),
+    ...meta,
+  };
+
+  if (hasBlobStorage()) {
+    await put(PLAN_KEY, JSON.stringify(payload), {
+      access: "private",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      contentType: "application/json",
+    });
+    console.log("[storage] Plan stored to blob");
+    return { storage: "blob" };
+  }
+
+  // Local dev
+  const fs = await import("fs/promises");
+  const path = await import("path");
+  const filePath = path.join(process.cwd(), "src", "lib", "custom-plan.json");
+  await fs.writeFile(filePath, JSON.stringify(payload, null, 2));
+  return { storage: "local", path: filePath };
+}
+
+/**
+ * Retrieve custom training plan (returns null if no custom plan exists)
+ */
+export async function getPlan() {
+  if (hasBlobStorage()) {
+    try {
+      const data = await readBlob(PLAN_KEY);
+      console.log("[storage] Plan loaded from blob:", data ? "found" : "empty");
+      return data;
+    } catch (e) {
+      console.error("[storage] Plan read error:", e.message);
+      return null;
+    }
+  }
+
+  // Local dev
+  try {
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    const filePath = path.join(process.cwd(), "src", "lib", "custom-plan.json");
+    const raw = await fs.readFile(filePath, "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Get sync metadata
  */

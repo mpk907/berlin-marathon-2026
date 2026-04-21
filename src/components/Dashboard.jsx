@@ -87,11 +87,15 @@ export default function Dashboard() {
   const [weeklyActuals, setWeeklyActuals] = useState(staticWeeklyActuals);
   const [hrZones, setHrZones] = useState(staticHrZones);
   const [dataSource, setDataSource] = useState("static");
+  const [planSource, setPlanSource] = useState("default");
+  const [planUpdatedAt, setPlanUpdatedAt] = useState(null);
   const [syncedAt, setSyncedAt] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
   const [showTokenInput, setShowTokenInput] = useState(false);
   const [tokenValue, setTokenValue] = useState("");
+  const [undoState, setUndoState] = useState(null); // { plan, timeout } for undo toast
+  const [selectedSession, setSelectedSession] = useState(null); // { weekNum, day } — tap-to-swap on mobile
 
   // ═══ Dynamic current week from today's date ═══
   const currentWeek = useMemo(() => {
@@ -113,6 +117,8 @@ export default function Dashboard() {
         }
         if (data && data.weeklyActuals) setWeeklyActuals(data.weeklyActuals);
         if (data && data.trainingPlan) setTrainingPlan(data.trainingPlan);
+        if (data && data.planSource) setPlanSource(data.planSource);
+        if (data && data.planUpdatedAt) setPlanUpdatedAt(data.planUpdatedAt);
         if (data && data.hrZones) setHrZones(data.hrZones);
 
         // Auto-sync if data is stale (older than 6 hours)
@@ -174,6 +180,66 @@ export default function Dashboard() {
     }
     setSyncing(false);
   }, []);
+
+  // ═══ SAVE PLAN: persist edits to blob ═══
+  const savePlan = useCallback(async (newPlan, reason = "manual edit") => {
+    setTrainingPlan(newPlan); // optimistic update
+    setPlanSource("custom");
+    setPlanUpdatedAt(new Date().toISOString());
+    try {
+      const res = await fetch("/api/plan", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: newPlan, reason }),
+      });
+      const result = await res.json();
+      if (result.status !== "success") {
+        console.error("[plan] Save failed:", result.message);
+      }
+    } catch (e) {
+      console.error("[plan] Save error:", e);
+    }
+  }, []);
+
+  // ═══ SWAP SESSIONS: move a session to a different day within the same week ═══
+  const swapSessions = useCallback((weekNum, fromDay, toDay) => {
+    const oldPlan = [...trainingPlan];
+    const newPlan = trainingPlan.map(w => {
+      if (w.week !== weekNum) return w;
+      const updated = { ...w };
+      // Swap the day values
+      const fromSession = updated[fromDay];
+      const toSession = updated[toDay];
+      updated[fromDay] = toSession || "Rest";
+      updated[toDay] = fromSession || "Rest";
+      // Swap detail entries too
+      if (updated.detail) {
+        const newDetail = { ...updated.detail };
+        const fromDetail = newDetail[fromDay];
+        const toDetail = newDetail[toDay];
+        delete newDetail[fromDay];
+        delete newDetail[toDay];
+        if (fromDetail) newDetail[toDay] = fromDetail;
+        if (toDetail) newDetail[fromDay] = toDetail;
+        updated.detail = newDetail;
+      }
+      return updated;
+    });
+
+    // Show undo toast
+    if (undoState?.timeout) clearTimeout(undoState.timeout);
+    const timeout = setTimeout(() => setUndoState(null), 6000);
+    setUndoState({ plan: oldPlan, timeout, fromDay, toDay, weekNum });
+
+    savePlan(newPlan, `swap ${fromDay}↔${toDay} in week ${weekNum}`);
+  }, [trainingPlan, savePlan, undoState]);
+
+  const undoSwap = useCallback(() => {
+    if (!undoState) return;
+    clearTimeout(undoState.timeout);
+    savePlan(undoState.plan, "undo swap");
+    setUndoState(null);
+  }, [undoState, savePlan]);
 
   const maxActualWeek = useMemo(() => weeklyData.length > 0 ? Math.max(...weeklyData.map(w => w.week)) : 0, [weeklyData]);
   const futureWeeks = useMemo(() => trainingPlan.filter(w => w.week > maxActualWeek).map(w => ({ week: w.week, plan: w.total })), [trainingPlan, maxActualWeek]);
@@ -708,7 +774,7 @@ export default function Dashboard() {
       <div className="px-4 sm:px-8 mt-6 overflow-x-auto -mx-4 sm:mx-0">
         <div className="flex gap-1 bg-slate-200 rounded-lg p-1 w-max sm:w-fit mx-4 sm:mx-0">
           {tabs.map(t => (
-            <button key={t.id} onClick={() => setActiveTab(t.id)}
+            <button key={t.id} onClick={() => { setActiveTab(t.id); setSelectedSession(null); }}
               className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition whitespace-nowrap ${activeTab === t.id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
               {t.label}
             </button>
@@ -876,7 +942,13 @@ export default function Dashboard() {
         {activeTab === "plan" && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-700">Training Plan — Week by Week</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-sm font-semibold text-slate-700">Training Plan — Week by Week</h3>
+                {planSource === "custom" && (
+                  <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium">Edited</span>
+                )}
+                <span className="text-xs text-slate-400 hidden sm:inline">Tap a future session to move it</span>
+              </div>
               <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
                 {[["upcoming", "Next 6 Weeks"], ["past", "Completed"], ["all", "All 38"]].map(([id, label]) => (
                   <button key={id} onClick={() => setPlanView(id)}
@@ -885,6 +957,14 @@ export default function Dashboard() {
                   </button>
                 ))}
               </div>
+              {planSource === "custom" && (
+                <button
+                  onClick={() => { savePlan(staticTrainingPlan, "reset to default"); setPlanSource("default"); }}
+                  className="text-xs text-slate-400 hover:text-red-500 transition ml-2"
+                >
+                  Reset to default
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
@@ -910,7 +990,27 @@ export default function Dashboard() {
                       const actuals = weeklyActuals[w.week] || {};
                       const weekData = weeklyData.find(wd => wd.week === w.week);
                       const actualTotal = weekData ? (weekData.run || 0) + (weekData.football || 0) + (weekData.spin || 0) : null;
-                      const pct = (isPastWeek || isCurrent) && weekData && w.total > 0 ? Math.round((actualTotal || 0) / w.total * 100) : null;
+                      // For current week: compare against planned km for days up to today only
+                      // (not the full week target — that unfairly penalizes mid-week)
+                      let pct = null;
+                      if ((isPastWeek || isCurrent) && weekData && w.total > 0) {
+                        if (isCurrent) {
+                          // Sum planned km for Mon through today
+                          const todayIdx = (new Date().getDay() + 6) % 7; // 0=Mon..6=Sun
+                          const daySlots = ["mon","tue","wed","thu","fri","sat","sun"];
+                          let plannedSoFar = 0;
+                          for (let di = 0; di <= todayIdx; di++) {
+                            const sess = w[daySlots[di]];
+                            if (sess && sess !== "Rest" && !sess.includes("✈️") && sess !== "Match" && sess !== "LAST MATCH") {
+                              const m = sess.match(/^(\d+\.?\d*)/);
+                              if (m) plannedSoFar += parseFloat(m[1]);
+                            }
+                          }
+                          pct = plannedSoFar > 0 ? Math.round((actualTotal || 0) / plannedSoFar * 100) : 100;
+                        } else {
+                          pct = Math.round((actualTotal || 0) / w.total * 100);
+                        }
+                      }
                       const isExpanded = expandedWeek === w.week;
                       const detail = w.detail || {};
 
@@ -954,8 +1054,55 @@ export default function Dashboard() {
                                 dayIsPast = dayIdx <= todayDayIdx;
                                 dayIsFuture = dayIdx > todayDayIdx;
                               }
+
+                              // Drag-to-reschedule: only future sessions are movable
+                              const hasSession = w[d] && w[d] !== "Rest" && !w[d].includes("✈️");
+                              const isDraggable = dayIsFuture && hasSession;
+                              const isDropTarget = dayIsFuture;
+                              const isSelected = selectedSession?.weekNum === w.week && selectedSession?.day === d;
+                              const isSameWeekSelected = selectedSession?.weekNum === w.week && selectedSession?.day !== d && dayIsFuture;
+
                               return (
-                                <td key={d} className="px-2 py-2 text-center">
+                                <td key={d}
+                                  className={`px-2 py-2 text-center transition-all ${
+                                    isSelected ? "ring-2 ring-blue-400 rounded-lg bg-blue-100/50" :
+                                    isSameWeekSelected ? "ring-1 ring-dashed ring-blue-200 rounded-lg cursor-pointer" :
+                                    ""
+                                  }`}
+                                  draggable={isDraggable}
+                                  onDragStart={isDraggable ? (e) => {
+                                    e.stopPropagation();
+                                    e.dataTransfer.setData("text/plain", JSON.stringify({ weekNum: w.week, day: d }));
+                                    e.dataTransfer.effectAllowed = "move";
+                                  } : undefined}
+                                  onDragOver={isDropTarget ? (e) => {
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = "move";
+                                  } : undefined}
+                                  onDrop={isDropTarget ? (e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    try {
+                                      const from = JSON.parse(e.dataTransfer.getData("text/plain"));
+                                      if (from.weekNum === w.week && from.day !== d) {
+                                        swapSessions(w.week, from.day, d);
+                                      }
+                                    } catch {}
+                                  } : undefined}
+                                  onClick={dayIsFuture ? (e) => {
+                                    e.stopPropagation();
+                                    if (selectedSession?.weekNum === w.week && selectedSession?.day !== d) {
+                                      // Second tap — swap
+                                      swapSessions(w.week, selectedSession.day, d);
+                                      setSelectedSession(null);
+                                    } else if (isDraggable) {
+                                      // First tap — select
+                                      setSelectedSession(isSelected ? null : { weekNum: w.week, day: d });
+                                    } else {
+                                      setSelectedSession(null);
+                                    }
+                                  } : undefined}
+                                >
                                   <DayCell
                                     planned={w[d]}
                                     actual={actuals[d]}
@@ -1082,7 +1229,28 @@ export default function Dashboard() {
               <tbody>
                 {weeklyData.map(w => {
                   const total = (w.run || 0) + (w.football || 0) + (w.spin || 0);
-                  const pct = w.plan > 0 ? Math.round(total / w.plan * 100) : 0;
+                  // Pro-rate current week's target to days elapsed
+                  let pct = 0;
+                  if (w.plan > 0) {
+                    if (w.week === currentWeek) {
+                      const todayIdx = (new Date().getDay() + 6) % 7;
+                      const daySlots = ["mon","tue","wed","thu","fri","sat","sun"];
+                      const wp = trainingPlan.find(p => p.week === w.week);
+                      let plannedSoFar = 0;
+                      if (wp) {
+                        for (let di = 0; di <= todayIdx; di++) {
+                          const sess = wp[daySlots[di]];
+                          if (sess && sess !== "Rest" && !sess.includes("✈️") && sess !== "Match" && sess !== "LAST MATCH") {
+                            const m = sess.match(/^(\d+\.?\d*)/);
+                            if (m) plannedSoFar += parseFloat(m[1]);
+                          }
+                        }
+                      }
+                      pct = plannedSoFar > 0 ? Math.round(total / plannedSoFar * 100) : 100;
+                    } else {
+                      pct = Math.round(total / w.plan * 100);
+                    }
+                  }
                   return (
                     <tr key={w.week} className="border-b border-slate-100 hover:bg-slate-50">
                       <td className="px-4 py-3 font-semibold text-slate-700">{w.week}</td>
@@ -1178,6 +1346,23 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Undo toast for plan swaps */}
+      {undoState && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4">
+          <div className="bg-slate-800 text-white rounded-xl px-5 py-3 shadow-2xl flex items-center gap-4 text-sm">
+            <span>
+              Moved session: <span className="font-medium capitalize">{undoState.fromDay}</span> ↔ <span className="font-medium capitalize">{undoState.toDay}</span> (Week {undoState.weekNum})
+            </span>
+            <button
+              onClick={undoSwap}
+              className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg font-medium transition"
+            >
+              Undo
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,14 +5,30 @@
 // ═══════════════════════════════════════════
 
 import { NextResponse } from "next/server";
-import { getActivities, getSyncMeta } from "@/lib/storage";
+import { getActivities, getSyncMeta, getPlan } from "@/lib/storage";
 import { syncedWeeklyData, syncedWeeklyActuals, syncMeta } from "@/lib/synced-data";
-import { weeklyData as staticWeeklyData, weeklyActuals as staticWeeklyActuals, trainingPlan, hrZones } from "@/lib/data";
+import { weeklyData as staticWeeklyData, weeklyActuals as staticWeeklyActuals, trainingPlan as staticTrainingPlan, hrZones } from "@/lib/data";
 
 // Prevent Vercel edge caching — this route reads from blob which changes on every sync
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  // Load custom plan if one exists, otherwise use static
+  let trainingPlan = staticTrainingPlan;
+  let planSource = "default";
+  let planUpdatedAt = null;
+  try {
+    const customPlan = await getPlan();
+    if (customPlan?.plan && customPlan.plan.length > 0) {
+      trainingPlan = customPlan.plan;
+      planSource = "custom";
+      planUpdatedAt = customPlan.updatedAt || null;
+      console.log("[activities] Using custom plan from blob");
+    }
+  } catch (e) {
+    console.warn("[activities] Custom plan read failed, using static:", e.message);
+  }
+
   // 1. Try Vercel Blob (persisted by sync route)
   try {
     const blobData = await getActivities();
@@ -28,6 +44,8 @@ export async function GET() {
         weeklyData: mergedWeekly,
         weeklyActuals: blobData.weeklyActuals || {},
         trainingPlan,
+        planSource,
+        planUpdatedAt,
         hrZones,
         activitiesCount: blobMeta?.activitiesCount || blobData.activities?.length || 0,
       });
@@ -46,6 +64,8 @@ export async function GET() {
       weeklyData: mergedWeekly,
       weeklyActuals: syncedWeeklyActuals,
       trainingPlan,
+      planSource,
+      planUpdatedAt,
       hrZones,
       activitiesCount: syncMeta.activitiesCount,
     });
@@ -58,6 +78,8 @@ export async function GET() {
     weeklyData: staticWeeklyData,
     weeklyActuals: staticWeeklyActuals,
     trainingPlan,
+    planSource,
+    planUpdatedAt,
     hrZones,
     activitiesCount: 0,
   });
