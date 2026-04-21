@@ -438,6 +438,8 @@ export default function Dashboard() {
     const weekOffset = Math.floor(daysSinceW15 / 7);
     const currentWeekNum = 15 + weekOffset;
 
+    let completedToday = null; // track what was done today for the "done" badge
+
     // Scan from today forward across this week and next
     for (let offset = 0; offset < 14; offset++) {
       const checkDate = new Date(now);
@@ -454,6 +456,17 @@ export default function Dashboard() {
       const session = weekPlan[dayKey];
       if (!session || session === "Rest" || session.includes("✈️")) continue;
 
+      // Check if this session was already completed (activity logged in weeklyActuals)
+      const actuals = weeklyActuals[wk];
+      if (actuals && actuals[dayKey]) {
+        // This session is done — if it's today, remember it for the badge
+        if (offset === 0) {
+          const detail = weekPlan.detail?.[dayKey] || null;
+          completedToday = { session, detail, actual: actuals[dayKey], week: wk };
+        }
+        continue; // skip to next day
+      }
+
       const detail = weekPlan.detail?.[dayKey] || null;
 
       // Relative label
@@ -466,10 +479,10 @@ export default function Dashboard() {
       const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
       const dateStr = `${checkDate.getDate()} ${months[checkDate.getMonth()]}`;
 
-      return { when, dateStr, dayName, session, detail, week: wk, weekNotes: weekPlan.notes };
+      return { when, dateStr, dayName, session, detail, week: wk, weekNotes: weekPlan.notes, completedToday };
     }
     return null;
-  }, [trainingPlan]);
+  }, [trainingPlan, weeklyActuals]);
 
   const filteredPlan = useMemo(() => {
     if (planView === "upcoming") return trainingPlan.filter(w => w.week >= currentWeek - 1 && w.week <= currentWeek + 5);
@@ -572,14 +585,28 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* ═══ NEXT TRAINING — hero card ═══ */}
+      {/* ═══ TODAY'S SESSION DONE + NEXT TRAINING ═══ */}
+      {nextTraining?.completedToday && (
+        <div className="px-4 sm:px-8 -mt-3 mb-2">
+          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl p-3 sm:p-4 shadow-md text-white flex items-center gap-3">
+            <div className="flex-shrink-0 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold">Today's session done</div>
+              <div className="text-emerald-200 text-xs">{nextTraining.completedToday.session} · {nextTraining.completedToday.actual}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {nextTraining && (
-        <div className="px-4 sm:px-8 -mt-3 mb-4">
+        <div className="px-4 sm:px-8 -mt-1 mb-4">
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-4 sm:p-6 shadow-lg text-white">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
-                  <span className="text-xs sm:text-sm font-medium text-blue-200 uppercase tracking-wider">Next Training</span>
+                  <span className="text-xs sm:text-sm font-medium text-blue-200 uppercase tracking-wider">{nextTraining.completedToday ? "Up Next" : "Next Training"}</span>
                   <span className="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full">{nextTraining.when}</span>
                   <span className="text-blue-200 text-xs sm:text-sm">{nextTraining.dateStr}</span>
                 </div>
