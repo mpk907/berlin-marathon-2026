@@ -97,6 +97,15 @@ export default function Dashboard() {
   const [undoState, setUndoState] = useState(null); // { plan, timeout } for undo toast
   const [selectedSession, setSelectedSession] = useState(null); // { weekNum, day } — tap-to-swap on mobile
 
+  // ═══ REPLAN STATE ═══
+  const [showReplan, setShowReplan] = useState(false);
+  const [replanReason, setReplanReason] = useState("");
+  const [replanCustom, setReplanCustom] = useState("");
+  const [replanning, setReplanning] = useState(false);
+  const [replanError, setReplanError] = useState(null);
+  const [proposedPlan, setProposedPlan] = useState(null); // { plan, changedWeeks }
+  const [showReplanDiff, setShowReplanDiff] = useState(false);
+
   // ═══ Dynamic current week from today's date ═══
   const currentWeek = useMemo(() => {
     const week1Start = new Date(2026, 0, 5); // Mon Jan 5 2026
@@ -240,6 +249,64 @@ export default function Dashboard() {
     savePlan(undoState.plan, "undo swap");
     setUndoState(null);
   }, [undoState, savePlan]);
+
+  // ═══ REPLAN: generate new plan via Claude API ═══
+  const generateReplan = useCallback(async () => {
+    const reasons = {
+      "missed-1": "I missed about 1 week of training and need to get back on track.",
+      "missed-2": "I missed 2 or more weeks of training (illness/travel/life). Need a conservative rebuild.",
+      "injury": "I'm returning from a minor injury. I need a cautious ramp-up with reduced volume for 2-3 weeks.",
+      "feeling-strong": "I'm feeling strong and ahead of schedule. I'd like to increase intensity slightly.",
+      "race-date": "The race date changed or I want to adjust my peak timing.",
+      "custom": replanCustom,
+    };
+    const reasonText = reasons[replanReason] || replanReason;
+    if (!reasonText) return;
+
+    setReplanning(true);
+    setReplanError(null);
+    try {
+      const res = await fetch("/api/replan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: reasonText,
+          currentWeek,
+          weeklyData,
+          currentPlan: trainingPlan,
+        }),
+      });
+      const result = await res.json();
+      if (result.status === "success") {
+        setProposedPlan({
+          plan: result.proposedPlan,
+          changedWeeks: result.changedWeeks,
+          reason: result.reason,
+        });
+        setShowReplanDiff(true);
+        setShowReplan(false);
+      } else {
+        setReplanError(result.message || "Failed to generate new plan");
+      }
+    } catch (e) {
+      setReplanError("Could not reach replan API: " + e.message);
+    }
+    setReplanning(false);
+  }, [replanReason, replanCustom, currentWeek, weeklyData, trainingPlan]);
+
+  const acceptReplan = useCallback(() => {
+    if (!proposedPlan) return;
+    savePlan(proposedPlan.plan, `replan: ${proposedPlan.reason}`);
+    setProposedPlan(null);
+    setShowReplanDiff(false);
+    setReplanReason("");
+    setReplanCustom("");
+  }, [proposedPlan, savePlan]);
+
+  const rejectReplan = useCallback(() => {
+    setProposedPlan(null);
+    setShowReplanDiff(false);
+  }, []);
 
   const maxActualWeek = useMemo(() => weeklyData.length > 0 ? Math.max(...weeklyData.map(w => w.week)) : 0, [weeklyData]);
   const futureWeeks = useMemo(() => trainingPlan.filter(w => w.week > maxActualWeek).map(w => ({ week: w.week, plan: w.total })), [trainingPlan, maxActualWeek]);
@@ -965,6 +1032,12 @@ export default function Dashboard() {
                   Reset to default
                 </button>
               )}
+              <button
+                onClick={() => setShowReplan(true)}
+                className="ml-auto bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-xs font-medium px-4 py-1.5 rounded-lg hover:from-violet-600 hover:to-indigo-600 transition shadow-sm"
+              >
+                Replan from here
+              </button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
@@ -1346,6 +1419,196 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* ═══ REPLAN MODAL ═══ */}
+      {showReplan && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => !replanning && setShowReplan(false)}>
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="text-lg font-bold text-slate-800">Replan from Week {currentWeek}</h3>
+                <button onClick={() => setShowReplan(false)} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+              </div>
+
+              <p className="text-sm text-slate-500 mb-4">Claude will generate an adjusted plan based on your training history and the reason below. You'll preview changes before accepting.</p>
+
+              <div className="space-y-2 mb-5">
+                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">What happened?</label>
+                {[
+                  ["missed-1", "Missed ~1 week", "Life got in the way, minor disruption"],
+                  ["missed-2", "Missed 2+ weeks", "Extended break — illness, travel, burnout"],
+                  ["injury", "Returning from injury", "Need cautious ramp-up"],
+                  ["feeling-strong", "Feeling strong", "Ahead of schedule, want more"],
+                ].map(([id, label, desc]) => (
+                  <button key={id}
+                    onClick={() => { setReplanReason(id); setReplanCustom(""); }}
+                    className={`w-full text-left px-4 py-3 rounded-xl border transition ${
+                      replanReason === id
+                        ? "border-violet-400 bg-violet-50 ring-1 ring-violet-200"
+                        : "border-slate-200 hover:border-slate-300 bg-white"
+                    }`}
+                  >
+                    <div className="text-sm font-medium text-slate-800">{label}</div>
+                    <div className="text-xs text-slate-500">{desc}</div>
+                  </button>
+                ))}
+                <button
+                  onClick={() => setReplanReason("custom")}
+                  className={`w-full text-left px-4 py-3 rounded-xl border transition ${
+                    replanReason === "custom"
+                      ? "border-violet-400 bg-violet-50 ring-1 ring-violet-200"
+                      : "border-slate-200 hover:border-slate-300 bg-white"
+                  }`}
+                >
+                  <div className="text-sm font-medium text-slate-800">Something else</div>
+                  <div className="text-xs text-slate-500">Describe your situation</div>
+                </button>
+                {replanReason === "custom" && (
+                  <textarea
+                    value={replanCustom}
+                    onChange={e => setReplanCustom(e.target.value)}
+                    placeholder="E.g., I want to shift my peak week earlier because..."
+                    className="w-full mt-2 px-4 py-3 rounded-xl border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-300 resize-none"
+                    rows={3}
+                  />
+                )}
+              </div>
+
+              {/* Training summary — auto-populated */}
+              <div className="bg-slate-50 rounded-xl p-4 mb-5">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Your training so far</div>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div>
+                    <div className="text-lg font-bold text-slate-800">{weeklyData.length}</div>
+                    <div className="text-xs text-slate-500">weeks logged</div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-bold text-slate-800">
+                      {weeklyData.reduce((s, w) => s + (w.run || 0), 0).toFixed(0)}
+                    </div>
+                    <div className="text-xs text-slate-500">total km</div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-bold text-slate-800">
+                      {weeklyData.length > 0 ? Math.max(...weeklyData.map(w => w.longRun || 0)).toFixed(0) : 0}
+                    </div>
+                    <div className="text-xs text-slate-500">longest run</div>
+                  </div>
+                </div>
+              </div>
+
+              {replanError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4 text-sm text-red-700">
+                  {replanError}
+                </div>
+              )}
+
+              <button
+                onClick={generateReplan}
+                disabled={replanning || (!replanReason || (replanReason === "custom" && !replanCustom.trim()))}
+                className="w-full bg-gradient-to-r from-violet-500 to-indigo-500 text-white font-semibold py-3 rounded-xl hover:from-violet-600 hover:to-indigo-600 transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {replanning ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Generating new plan...
+                  </>
+                ) : "Generate adjusted plan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ REPLAN DIFF PREVIEW ═══ */}
+      {showReplanDiff && proposedPlan && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">Review New Plan</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Changed weeks are highlighted. Scroll to review, then accept or reject.</p>
+                </div>
+                <button onClick={rejectReplan} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+              </div>
+
+              <div className="space-y-3 mb-6">
+                {proposedPlan.plan
+                  .filter(w => w.week >= currentWeek && w.week <= 38)
+                  .map(w => {
+                    const isChanged = proposedPlan.changedWeeks.includes(w.week);
+                    const oldWeek = trainingPlan.find(ow => ow.week === w.week);
+                    const daySlots = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+                    const dayLabelsShort = ["M", "T", "W", "T", "F", "S", "S"];
+
+                    return (
+                      <div key={w.week} className={`rounded-xl border p-3 transition ${
+                        isChanged ? "border-violet-200 bg-violet-50/50" : "border-slate-100 bg-white opacity-60"
+                      }`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm font-bold ${w.week === currentWeek ? "text-blue-600" : "text-slate-700"}`}>
+                              Wk {w.week}
+                            </span>
+                            <span className="text-xs text-slate-400">{w.dates}</span>
+                            {isChanged && <span className="text-xs bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded font-medium">Changed</span>}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-700">{w.total}km</span>
+                            {isChanged && oldWeek && oldWeek.total !== w.total && (
+                              <span className="text-xs text-slate-400 line-through">{oldWeek.total}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-7 gap-1">
+                          {daySlots.map((d, i) => {
+                            const session = w[d] || "Rest";
+                            const oldSession = oldWeek?.[d] || "Rest";
+                            const changed = isChanged && session !== oldSession;
+                            const hasSession = session !== "Rest" && !session.includes("✈️");
+                            return (
+                              <div key={d} className={`text-center rounded-lg py-1.5 px-1 ${
+                                changed ? "bg-violet-100 ring-1 ring-violet-300" :
+                                hasSession ? "bg-slate-50" : ""
+                              }`}>
+                                <div className="text-xs text-slate-400 font-medium">{dayLabelsShort[i]}</div>
+                                <div className={`text-xs font-medium mt-0.5 ${
+                                  changed ? "text-violet-700" : hasSession ? "text-slate-700" : "text-slate-300"
+                                }`}>
+                                  {session}
+                                </div>
+                                {changed && oldSession !== "Rest" && (
+                                  <div className="text-xs text-slate-400 line-through mt-0.5" style={{ fontSize: "9px" }}>{oldSession}</div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {w.notes && <div className="text-xs text-slate-500 mt-1.5">{w.notes}</div>}
+                      </div>
+                    );
+                  })}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={rejectReplan}
+                  className="flex-1 border border-slate-200 text-slate-600 font-medium py-3 rounded-xl hover:bg-slate-50 transition"
+                >
+                  Reject
+                </button>
+                <button
+                  onClick={acceptReplan}
+                  className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold py-3 rounded-xl hover:from-emerald-600 hover:to-teal-600 transition shadow-md"
+                >
+                  Accept new plan
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Undo toast for plan swaps */}
       {undoState && (
