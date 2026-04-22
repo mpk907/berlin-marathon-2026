@@ -105,6 +105,7 @@ export default function Dashboard() {
   const [replanError, setReplanError] = useState(null);
   const [proposedPlan, setProposedPlan] = useState(null); // { plan, changedWeeks }
   const [showReplanDiff, setShowReplanDiff] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   // ═══ Dynamic current week from today's date ═══
   const currentWeek = useMemo(() => {
@@ -1008,12 +1009,9 @@ export default function Dashboard() {
         {/* ═══ TRAINING PLAN ═══ */}
         {activeTab === "plan" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-3">
                 <h3 className="text-sm font-semibold text-slate-700">Training Plan — Week by Week</h3>
-                {planSource === "custom" && (
-                  <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium">Edited</span>
-                )}
                 <span className="text-xs text-slate-400 hidden sm:inline">Tap a future session to move it</span>
               </div>
               <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
@@ -1024,20 +1022,6 @@ export default function Dashboard() {
                   </button>
                 ))}
               </div>
-              {planSource === "custom" && (
-                <button
-                  onClick={() => { savePlan(staticTrainingPlan, "reset to default"); setPlanSource("default"); }}
-                  className="text-xs text-slate-400 hover:text-red-500 transition ml-2"
-                >
-                  Reset to default
-                </button>
-              )}
-              <button
-                onClick={() => setShowReplan(true)}
-                className="ml-auto bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-xs font-medium px-4 py-1.5 rounded-lg hover:from-violet-600 hover:to-indigo-600 transition shadow-sm"
-              >
-                Replan from here
-              </button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
@@ -1275,6 +1259,69 @@ export default function Dashboard() {
                 <div className="w-3 h-3 rounded bg-red-50 border border-red-200"></div> Peak
               </div>
               <div>🏃 Run · ⚽ Football · 🚴 Cycling · MP = Marathon Pace</div>
+            </div>
+
+            {/* ═══ PLAN ACTIONS ═══ */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 mt-2">
+              <h4 className="text-sm font-semibold text-slate-700 mb-1">Plan adjustments</h4>
+              <p className="text-xs text-slate-400 mb-4">
+                {planSource === "custom"
+                  ? `You're using a modified plan${planUpdatedAt ? ` · last updated ${new Date(planUpdatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}`
+                  : "You're on the original training plan. Need to adjust after a break or change of schedule?"
+                }
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={() => setShowReplan(true)}
+                  className="flex-1 group border border-slate-200 rounded-xl px-4 py-3 text-left hover:border-violet-300 hover:bg-violet-50/50 transition"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <svg className="w-4 h-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span className="text-sm font-medium text-slate-700">Replan from here</span>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    AI generates an adjusted plan from week {currentWeek} onward based on your reason (illness, missed weeks, etc.). You'll preview all changes before accepting.
+                  </p>
+                </button>
+                {planSource === "custom" && (
+                  <div className="sm:w-48 flex flex-col">
+                    {!confirmReset ? (
+                      <button
+                        onClick={() => setConfirmReset(true)}
+                        className="flex-1 border border-slate-200 rounded-xl px-4 py-3 text-left hover:border-red-200 hover:bg-red-50/50 transition"
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          <span className="text-sm font-medium text-slate-700">Reset plan</span>
+                        </div>
+                        <p className="text-xs text-slate-400">Go back to the original training plan</p>
+                      </button>
+                    ) : (
+                      <div className="flex-1 border border-red-200 bg-red-50 rounded-xl px-4 py-3">
+                        <p className="text-xs text-red-700 font-medium mb-2">Discard all edits and revert to the original plan?</p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => { savePlan(staticTrainingPlan, "reset to default"); setPlanSource("default"); setConfirmReset(false); }}
+                            className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-red-700 transition"
+                          >
+                            Yes, reset
+                          </button>
+                          <button
+                            onClick={() => setConfirmReset(false)}
+                            className="text-xs text-slate-600 px-3 py-1.5 rounded-lg font-medium hover:bg-white transition"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
