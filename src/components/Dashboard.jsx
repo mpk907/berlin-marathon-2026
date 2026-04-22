@@ -1245,20 +1245,26 @@ export default function Dashboard() {
             </div>
 
             {/* Plan legend */}
-            <div className="flex items-center gap-6 text-xs text-slate-400 px-2">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500 px-2">
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-blue-50 border border-blue-200"></div> Planned
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: "#DBEAFE", border: "2px solid #93C5FD" }}></div> Planned
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-emerald-50 border border-emerald-200"></div> Completed
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: "#D1FAE5", border: "2px solid #6EE7B7" }}></div> Completed
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-amber-50 border border-amber-200"></div> Ease Week
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: "#FEF3C7", border: "2px solid #FCD34D" }}></div> Ease Week
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-red-50 border border-red-200"></div> Peak
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: "#FEE2E2", border: "2px solid #FCA5A5" }}></div> Peak
               </div>
-              <div>🏃 Run · ⚽ Football · 🚴 Cycling · MP = Marathon Pace</div>
+              <span className="text-slate-400">·</span>
+              <div className="flex items-center gap-3">
+                <span>🏃 Run</span>
+                <span>⚽ Football</span>
+                <span>🚴 Cycling</span>
+                <span className="text-slate-400 font-medium">MP</span><span className="text-slate-400">= Marathon Pace</span>
+              </div>
             </div>
 
             {/* ═══ PLAN ACTIONS ═══ */}
