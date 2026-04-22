@@ -11,10 +11,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30; // Allow up to 30s for Claude API call
 
 export async function POST(request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { status: "error", message: "ANTHROPIC_API_KEY not configured. Add it to your Vercel environment variables." },
+      { status: "error", message: "OPENROUTER_API_KEY not configured. Add it to your Vercel environment variables." },
       { status: 500 }
     );
   }
@@ -84,15 +84,16 @@ Rules:
 Respond with ONLY a valid JSON array of week objects. No markdown, no explanation. Each object must have:
 { "week": number, "dates": string, "total": number, "mon": string, "tue": string, "wed": string, "thu": string, "fri": string, "sat": string, "sun": string, "notes": string, "detail": { dayKey: { km, type, hr, pace } } }`;
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+        "Authorization": `Bearer ${apiKey}`,
+        "HTTP-Referer": "https://berlin-marathon-2026-max.vercel.app",
+        "X-Title": "Berlin Marathon Training Planner",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "anthropic/claude-sonnet-4",
         max_tokens: 8000,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -100,15 +101,15 @@ Respond with ONLY a valid JSON array of week objects. No markdown, no explanatio
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error("[replan] Claude API error:", response.status, errText);
+      console.error("[replan] OpenRouter API error:", response.status, errText);
       return NextResponse.json(
-        { status: "error", message: `Claude API error: ${response.status}` },
+        { status: "error", message: `OpenRouter API error: ${response.status}` },
         { status: 500 }
       );
     }
 
     const result = await response.json();
-    const content = result.content?.[0]?.text || "";
+    const content = result.choices?.[0]?.message?.content || "";
 
     // Parse the JSON response — Claude might wrap it in ```json blocks
     let planJson;
