@@ -9,6 +9,14 @@ import {
   weeklyActuals as staticWeeklyActuals,
   dailyActualDetails as staticDailyActualDetails,
 } from "@/lib/data";
+import {
+  computeCurrentProjection,
+  computeProjectionTrend,
+  secToPaceStr,
+  secToTimeStr,
+  TARGET_MARATHON_SEC,
+  TARGET_PACE_SEC,
+} from "@/lib/projection";
 
 const KPI = ({ label, value, sub, color = "text-slate-800" }) => (
   <div className="bg-white rounded-xl p-3 sm:p-5 shadow-sm border border-slate-100">
@@ -720,6 +728,20 @@ export default function Dashboard() {
     setDismissedDoneEarly(true);
   }, []);
 
+  // ═══ RACE PROJECTION — estimate marathon time from actual runs ═══
+  const projection = useMemo(() => {
+    return computeCurrentProjection(dailyActualDetails, weeklyData, currentWeek);
+  }, [dailyActualDetails, weeklyData, currentWeek]);
+
+  const projectionTrend = useMemo(() => {
+    const maxWk = Math.max(currentWeek, ...weeklyData.map(w => w.week || 0));
+    const trend = computeProjectionTrend(dailyActualDetails, weeklyData, maxWk);
+    const targetMin = Math.round(TARGET_MARATHON_SEC / 60);
+    return trend
+      .filter(t => t.marathonMin !== null)
+      .map(t => ({ week: t.week, projection: t.marathonMin, target: targetMin }));
+  }, [dailyActualDetails, weeklyData, currentWeek]);
+
   const filteredPlan = useMemo(() => {
     if (planView === "upcoming") return trainingPlan.filter(w => w.week >= currentWeek - 1 && w.week <= currentWeek + 5);
     if (planView === "past") return trainingPlan.filter(w => w.week <= currentWeek);
@@ -961,6 +983,89 @@ export default function Dashboard() {
         {/* ═══ OVERVIEW ═══ */}
         {activeTab === "overview" && (
           <div className="space-y-6">
+            {/* Race Projection card */}
+            {projection && (
+              <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-xl p-6 shadow-lg text-white">
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div>
+                    <div className="text-xs font-medium text-indigo-200 uppercase tracking-wider mb-1">Race Projection</div>
+                    <div className="text-xs text-indigo-200">Berlin · 28 Sep 2026</div>
+                  </div>
+                  <div className="text-xs bg-white/10 px-2 py-1 rounded-md text-indigo-100">
+                    {projection.method === "z2-pace" ? "Z2 pace" :
+                     projection.method === "avg-pace" ? "avg pace" : "weekly avg"}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+                  <div>
+                    <div className="text-indigo-200 text-xs mb-1">Projected finish</div>
+                    <div className="text-4xl sm:text-5xl font-bold tracking-tight">{secToTimeStr(projection.marathonSec)}</div>
+                    <div className="text-indigo-200 text-sm mt-1">@ {secToPaceStr(projection.racePaceSec)} /km</div>
+                  </div>
+                  <div>
+                    <div className="text-indigo-200 text-xs mb-1">Plan goal</div>
+                    <div className="text-xl font-semibold">{secToTimeStr(TARGET_MARATHON_SEC)}</div>
+                    <div className="text-indigo-200 text-sm mt-1">@ {secToPaceStr(TARGET_PACE_SEC)} /km</div>
+                    {(() => {
+                      const deltaSec = projection.marathonSec - TARGET_MARATHON_SEC;
+                      const deltaMin = Math.round(Math.abs(deltaSec) / 60);
+                      const ahead = deltaSec < 0;
+                      return (
+                        <div className={`text-sm font-semibold mt-2 ${ahead ? "text-emerald-300" : "text-amber-300"}`}>
+                          {ahead ? "▼" : "▲"} {deltaMin} min {ahead ? "ahead of" : "behind"} goal
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <div>
+                    <div className="text-indigo-200 text-xs mb-1">Based on</div>
+                    <div className="text-lg font-medium">{projection.basedOnRuns} run{projection.basedOnRuns === 1 ? "" : "s"}</div>
+                    <div className="text-indigo-200 text-sm">{projection.basedOnKm} km · last 4 weeks</div>
+                    {projection.avgHr && (
+                      <div className="text-indigo-200 text-sm mt-1">avg HR {projection.avgHr}</div>
+                    )}
+                  </div>
+                </div>
+                {projectionTrend.length >= 3 && (
+                  <div className="mt-4 pt-4 border-t border-white/10">
+                    <div className="text-xs text-indigo-200 mb-2">Trend (3-week rolling)</div>
+                    <ResponsiveContainer width="100%" height={90}>
+                      <LineChart data={projectionTrend}>
+                        <XAxis dataKey="week" tick={{ fontSize: 10, fill: "#c7d2fe" }} axisLine={false} tickLine={false} />
+                        <YAxis
+                          tick={{ fontSize: 10, fill: "#c7d2fe" }}
+                          axisLine={false}
+                          tickLine={false}
+                          domain={["dataMin - 10", "dataMax + 10"]}
+                          tickFormatter={v => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, "0")}`}
+                          reversed
+                          width={40}
+                        />
+                        <Tooltip
+                          contentStyle={{ background: "#312e81", border: "none", borderRadius: 8, fontSize: 12 }}
+                          labelStyle={{ color: "#c7d2fe" }}
+                          formatter={(val, name) => {
+                            const h = Math.floor(val / 60);
+                            const m = val % 60;
+                            return [`${h}:${String(m).padStart(2, "0")}`, name === "projection" ? "Projection" : "Goal"];
+                          }}
+                        />
+                        <Line type="monotone" dataKey="projection" stroke="#fde68a" strokeWidth={2.5} dot={{ r: 3, fill: "#fde68a" }} isAnimationActive={false} />
+                        <Line type="monotone" dataKey="target" stroke="#86efac" strokeWidth={1.5} strokeDasharray="4 4" dot={false} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+                <div className="text-xs text-indigo-200 mt-3">
+                  {projection.method === "z2-pace"
+                    ? "Z2 pace − 30 s/km race-effort buffer × 42.195 km."
+                    : projection.method === "avg-pace"
+                    ? "Average run pace − 45 s/km race-effort buffer × 42.195 km. Sync more Z2 runs for a tighter estimate."
+                    : "Weekly average pace − 45 s/km buffer. Sync per-session details for a tighter estimate."}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
               <h3 className="text-sm font-semibold text-slate-700 mb-4">Weekly Volume vs Plan</h3>
               <ResponsiveContainer width="100%" height={320}>
