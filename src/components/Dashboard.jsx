@@ -1168,46 +1168,93 @@ export default function Dashboard() {
                               <div className="flex items-center gap-2">
                                 {w.notes && <span className="text-xs text-slate-500">{w.notes}</span>}
                                 {(isPastWeek || isCurrent) && pct !== null && <StatusBadge pct={pct} />}
-                                {w.detail && <span className="text-xs text-blue-400">{isExpanded ? "▼" : "▶"}</span>}
+                                {(w.detail || Object.keys(actuals).length > 0) && <span className="text-xs text-blue-400">{isExpanded ? "▼" : "▶"}</span>}
                               </div>
                             </td>
                           </tr>
-                          {/* Expanded detail row showing HR/pace guidance */}
-                          {isExpanded && w.detail && (
+                          {/* Expanded detail row — actuals for past/current days, planned for future days */}
+                          {isExpanded && (w.detail || Object.keys(actuals).length > 0) && (
                             <tr className="bg-slate-50">
                               <td colSpan={11} className="px-6 py-3">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                  {Object.entries(w.detail).map(([day, d]) => (
-                                    <div key={day} className="bg-white rounded-lg p-3 border border-slate-200">
-                                      <div className="flex items-center justify-between mb-1">
-                                        <span className="font-semibold text-sm text-slate-700 capitalize">{day}</span>
-                                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                          d.type === "easy" ? "bg-green-100 text-green-700" :
-                                          d.type === "long" || d.type === "long easy" ? "bg-blue-100 text-blue-700" :
-                                          d.type === "tempo" ? "bg-orange-100 text-orange-700" :
-                                          d.type === "intervals" || d.type === "MP intervals" ? "bg-red-100 text-red-700" :
-                                          d.type === "quality" || d.type === "MP continuous" ? "bg-purple-100 text-purple-700" :
-                                          d.type === "shakeout" || d.type === "recovery" ? "bg-gray-100 text-gray-600" :
-                                          d.type === "football" ? "bg-orange-100 text-orange-700" :
-                                          d.type === "RACE" ? "bg-yellow-100 text-yellow-800 font-bold" :
-                                          "bg-slate-100 text-slate-600"
-                                        }`}>{d.type}</span>
-                                      </div>
-                                      {d.km > 0 && <div className="text-lg font-bold text-slate-800">{d.km} km</div>}
-                                      {d.hr && (
-                                        <div className="flex items-center gap-1 mt-1">
-                                          <span className="text-xs text-red-400">♥</span>
-                                          <span className="text-xs text-slate-600">{d.hr}</span>
+                                  {days.map((dayKey, dayIdx) => {
+                                    const actualStr = actuals[dayKey];
+                                    const plannedDetail = w.detail?.[dayKey];
+                                    let isDayFuture;
+                                    if (isPastWeek) isDayFuture = false;
+                                    else if (isFutureWeek) isDayFuture = true;
+                                    else isDayFuture = dayIdx > todayDayIdx;
+
+                                    // Prioritize actual: show actual card if an activity was recorded
+                                    if (actualStr) {
+                                      return (
+                                        <div key={dayKey} className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <span className="font-semibold text-sm text-emerald-800 capitalize">{dayKey}</span>
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">actual</span>
+                                          </div>
+                                          <div className="text-sm font-bold text-emerald-900 whitespace-pre-line">{actualStr}</div>
+                                          {plannedDetail && (
+                                            <div className="mt-1.5 pt-1.5 border-t border-emerald-100 text-xs text-slate-400">
+                                              <span className="line-through">plan: {plannedDetail.km > 0 ? `${plannedDetail.km}km ` : ""}{plannedDetail.type}</span>
+                                            </div>
+                                          )}
                                         </div>
-                                      )}
-                                      {d.pace && (
-                                        <div className="flex items-center gap-1 mt-0.5">
-                                          <span className="text-xs text-blue-400">⏱</span>
-                                          <span className="text-xs text-slate-600">{d.pace}</span>
+                                      );
+                                    }
+
+                                    // No actual — show planned only for future days
+                                    if (isDayFuture && plannedDetail) {
+                                      return (
+                                        <div key={dayKey} className="bg-white rounded-lg p-3 border border-slate-200">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <span className="font-semibold text-sm text-slate-700 capitalize">{dayKey}</span>
+                                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                              plannedDetail.type === "easy" ? "bg-green-100 text-green-700" :
+                                              plannedDetail.type === "long" || plannedDetail.type === "long easy" ? "bg-blue-100 text-blue-700" :
+                                              plannedDetail.type === "tempo" ? "bg-orange-100 text-orange-700" :
+                                              plannedDetail.type === "intervals" || plannedDetail.type === "MP intervals" ? "bg-red-100 text-red-700" :
+                                              plannedDetail.type === "quality" || plannedDetail.type === "MP continuous" ? "bg-purple-100 text-purple-700" :
+                                              plannedDetail.type === "shakeout" || plannedDetail.type === "recovery" ? "bg-gray-100 text-gray-600" :
+                                              plannedDetail.type === "football" ? "bg-orange-100 text-orange-700" :
+                                              plannedDetail.type === "RACE" ? "bg-yellow-100 text-yellow-800 font-bold" :
+                                              "bg-slate-100 text-slate-600"
+                                            }`}>{plannedDetail.type}</span>
+                                          </div>
+                                          {plannedDetail.km > 0 && <div className="text-lg font-bold text-slate-800">{plannedDetail.km} km</div>}
+                                          {plannedDetail.hr && (
+                                            <div className="flex items-center gap-1 mt-1">
+                                              <span className="text-xs text-red-400">♥</span>
+                                              <span className="text-xs text-slate-600">{plannedDetail.hr}</span>
+                                            </div>
+                                          )}
+                                          {plannedDetail.pace && (
+                                            <div className="flex items-center gap-1 mt-0.5">
+                                              <span className="text-xs text-blue-400">⏱</span>
+                                              <span className="text-xs text-slate-600">{plannedDetail.pace}</span>
+                                            </div>
+                                          )}
                                         </div>
-                                      )}
-                                    </div>
-                                  ))}
+                                      );
+                                    }
+
+                                    // Past day without actual → show a muted "no activity" card so the week is complete
+                                    if (!isDayFuture && plannedDetail) {
+                                      return (
+                                        <div key={dayKey} className="bg-white rounded-lg p-3 border border-dashed border-slate-200 opacity-60">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <span className="font-semibold text-sm text-slate-400 capitalize">{dayKey}</span>
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">missed</span>
+                                          </div>
+                                          <div className="text-xs text-slate-400 line-through">
+                                            {plannedDetail.km > 0 ? `${plannedDetail.km}km ` : ""}{plannedDetail.type}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
+                                    return null;
+                                  })}
                                 </div>
                               </td>
                             </tr>
