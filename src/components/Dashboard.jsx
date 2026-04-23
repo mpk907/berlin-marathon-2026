@@ -23,7 +23,15 @@ const StatusBadge = ({ pct }) => {
   return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Off Track</span>;
 };
 
-const DayCell = ({ planned, actual, isPast, isFuture, detail }) => {
+const DayCell = ({ planned, actual, isFuture, detail }) => {
+  // Always prioritize actuals — if an activity was recorded, show it regardless of past/future
+  if (actual) {
+    return (
+      <div className="text-xs py-1 px-1 rounded bg-emerald-50 text-emerald-700 font-medium whitespace-pre-line">
+        {actual}
+      </div>
+    );
+  }
   if (isFuture) {
     const hasSession = planned && planned !== "Rest" && !planned.includes("✈️");
     return (
@@ -37,16 +45,6 @@ const DayCell = ({ planned, actual, isPast, isFuture, detail }) => {
         )}
       </div>
     );
-  }
-  if (isPast && actual) {
-    return (
-      <div className="text-xs py-1 px-1 rounded bg-emerald-50 text-emerald-700 font-medium whitespace-pre-line">
-        {actual}
-      </div>
-    );
-  }
-  if (isPast) {
-    return <div className="text-xs py-1 px-1 text-slate-300">—</div>;
   }
   return <div className="text-xs py-1 px-1 text-slate-300">—</div>;
 };
@@ -1099,16 +1097,13 @@ export default function Dashboard() {
                               )}
                             </td>
                             {days.map((d, dayIdx) => {
-                              // Per-day past/future: past weeks are all past, future weeks all future
-                              // Current week: days up to today are past, days after today are future
-                              let dayIsPast, dayIsFuture;
+                              // Per-day future: future weeks all future; current week — days after today are future
+                              let dayIsFuture;
                               if (isPastWeek) {
-                                dayIsPast = true; dayIsFuture = false;
+                                dayIsFuture = false;
                               } else if (isFutureWeek) {
-                                dayIsPast = false; dayIsFuture = true;
+                                dayIsFuture = true;
                               } else {
-                                // Current week — compare day index
-                                dayIsPast = dayIdx <= todayDayIdx;
                                 dayIsFuture = dayIdx > todayDayIdx;
                               }
 
@@ -1163,7 +1158,6 @@ export default function Dashboard() {
                                   <DayCell
                                     planned={w[d]}
                                     actual={actuals[d]}
-                                    isPast={dayIsPast}
                                     isFuture={dayIsFuture}
                                     detail={dayIsFuture ? detail[d] : null}
                                   />
