@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import { getActivities, getSyncMeta, getPlan } from "@/lib/storage";
 import { syncedWeeklyData, syncedWeeklyActuals, syncMeta } from "@/lib/synced-data";
-import { weeklyData as staticWeeklyData, weeklyActuals as staticWeeklyActuals, trainingPlan as staticTrainingPlan, hrZones } from "@/lib/data";
+import { weeklyData as staticWeeklyData, weeklyActuals as staticWeeklyActuals, dailyActualDetails as staticDailyActualDetails, trainingPlan as staticTrainingPlan, hrZones } from "@/lib/data";
 
 // Prevent Vercel edge caching — this route reads from blob which changes on every sync
 export const dynamic = "force-dynamic";
@@ -43,6 +43,7 @@ export async function GET() {
         syncedAt: blobMeta?.syncedAt || null,
         weeklyData: mergedWeekly,
         weeklyActuals: blobData.weeklyActuals || {},
+        dailyActualDetails: blobData.dailyActualDetails || {},
         trainingPlan,
         planSource,
         planUpdatedAt,
@@ -63,6 +64,7 @@ export async function GET() {
       syncedAt: syncMeta.syncedAt,
       weeklyData: mergedWeekly,
       weeklyActuals: syncedWeeklyActuals,
+      dailyActualDetails: staticDailyActualDetails,
       trainingPlan,
       planSource,
       planUpdatedAt,
@@ -77,6 +79,7 @@ export async function GET() {
     syncedAt: null,
     weeklyData: staticWeeklyData,
     weeklyActuals: staticWeeklyActuals,
+    dailyActualDetails: staticDailyActualDetails,
     trainingPlan,
     planSource,
     planUpdatedAt,

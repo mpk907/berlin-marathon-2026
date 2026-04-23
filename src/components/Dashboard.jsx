@@ -7,6 +7,7 @@ import {
   hrZones as staticHrZones,
   trainingPlan as staticTrainingPlan,
   weeklyActuals as staticWeeklyActuals,
+  dailyActualDetails as staticDailyActualDetails,
 } from "@/lib/data";
 
 const KPI = ({ label, value, sub, color = "text-slate-800" }) => (
@@ -83,6 +84,7 @@ export default function Dashboard() {
   const [weeklyData, setWeeklyData] = useState(staticWeeklyData);
   const [trainingPlan, setTrainingPlan] = useState(staticTrainingPlan);
   const [weeklyActuals, setWeeklyActuals] = useState(staticWeeklyActuals);
+  const [dailyActualDetails, setDailyActualDetails] = useState(staticDailyActualDetails);
   const [hrZones, setHrZones] = useState(staticHrZones);
   const [dataSource, setDataSource] = useState("static");
   const [planSource, setPlanSource] = useState("default");
@@ -124,6 +126,7 @@ export default function Dashboard() {
           setSyncedAt(data.syncedAt);
         }
         if (data && data.weeklyActuals) setWeeklyActuals(data.weeklyActuals);
+        if (data && data.dailyActualDetails) setDailyActualDetails(data.dailyActualDetails);
         if (data && data.trainingPlan) setTrainingPlan(data.trainingPlan);
         if (data && data.planSource) setPlanSource(data.planSource);
         if (data && data.planUpdatedAt) setPlanUpdatedAt(data.planUpdatedAt);
@@ -143,6 +146,7 @@ export default function Dashboard() {
                 const merged = result.weeklyData.map(w => ({ ...w, plan: planMap[w.week] || 0 }));
                 setWeeklyData(merged);
                 setWeeklyActuals(result.weeklyActuals || {});
+                if (result.dailyActualDetails) setDailyActualDetails(result.dailyActualDetails);
                 setDataSource("whoop");
                 setSyncedAt(result.syncedAt);
                 console.log(`[dashboard] Background sync complete: ${result.activitiesCount} activities`);
@@ -173,6 +177,7 @@ export default function Dashboard() {
           const merged = result.weeklyData.map(w => ({ ...w, plan: planMap[w.week] || 0 }));
           setWeeklyData(merged);
           setWeeklyActuals(result.weeklyActuals || staticWeeklyActuals);
+          setDailyActualDetails(result.dailyActualDetails || staticDailyActualDetails);
           setDataSource("whoop");
           setSyncedAt(result.syncedAt);
         }
@@ -1043,6 +1048,7 @@ export default function Dashboard() {
                       const isCurrent = w.week === currentWeek;
                       const isFutureWeek = w.week > currentWeek;
                       const actuals = weeklyActuals[w.week] || {};
+                      const dayDetails = dailyActualDetails[w.week] || {};
                       const weekData = weeklyData.find(wd => wd.week === w.week);
                       const actualTotal = weekData ? (weekData.run || 0) + (weekData.football || 0) + (weekData.spin || 0) : null;
                       // For current week: compare against planned km for days up to today only
@@ -1168,16 +1174,17 @@ export default function Dashboard() {
                               <div className="flex items-center gap-2">
                                 {w.notes && <span className="text-xs text-slate-500">{w.notes}</span>}
                                 {(isPastWeek || isCurrent) && pct !== null && <StatusBadge pct={pct} />}
-                                {(w.detail || Object.keys(actuals).length > 0) && <span className="text-xs text-blue-400">{isExpanded ? "▼" : "▶"}</span>}
+                                {(w.detail || Object.keys(actuals).length > 0 || Object.keys(dayDetails).length > 0) && <span className="text-xs text-blue-400">{isExpanded ? "▼" : "▶"}</span>}
                               </div>
                             </td>
                           </tr>
                           {/* Expanded detail row — actuals for past/current days, planned for future days */}
-                          {isExpanded && (w.detail || Object.keys(actuals).length > 0) && (
+                          {isExpanded && (w.detail || Object.keys(actuals).length > 0 || Object.keys(dayDetails).length > 0) && (
                             <tr className="bg-slate-50">
                               <td colSpan={11} className="px-6 py-3">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                   {days.map((dayKey, dayIdx) => {
+                                    const sessions = dayDetails[dayKey] || null;
                                     const actualStr = actuals[dayKey];
                                     const plannedDetail = w.detail?.[dayKey];
                                     let isDayFuture;
@@ -1185,7 +1192,53 @@ export default function Dashboard() {
                                     else if (isFutureWeek) isDayFuture = true;
                                     else isDayFuture = dayIdx > todayDayIdx;
 
-                                    // Prioritize actual: show actual card if an activity was recorded
+                                    // Prioritize actual: show rich per-session card if we have structured detail
+                                    if (sessions && sessions.length > 0) {
+                                      const totalKm = sessions.reduce((s, x) => s + (x.distance > 0.5 ? x.distance : 0), 0);
+                                      const totalEquiv = sessions.reduce((s, x) => s + (x.kmEquiv || 0), 0);
+                                      return (
+                                        <div key={dayKey} className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+                                          <div className="flex items-center justify-between mb-1.5">
+                                            <span className="font-semibold text-sm text-emerald-800 capitalize">{dayKey}</span>
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">actual</span>
+                                          </div>
+                                          <div className="space-y-1.5">
+                                            {sessions.map((s, i) => {
+                                              const emoji = s.type === "Run" ? "🏃" : s.type === "Football" ? "⚽" : s.type === "Spin" ? "🚴" : "💪";
+                                              const mainLabel = s.distance > 0.5
+                                                ? `${s.distance.toFixed(1)} km`
+                                                : `${Math.round(s.duration)} min`;
+                                              const showEquiv = s.kmEquiv && s.type !== "Run" && (s.distance <= 0.5 || s.type === "Football");
+                                              return (
+                                                <div key={i} className="text-xs">
+                                                  <div className="font-bold text-emerald-900">
+                                                    <span className="mr-1">{emoji}</span>{mainLabel}
+                                                    {showEquiv && <span className="text-emerald-600 font-normal ml-1">≈{s.kmEquiv}km run-equiv</span>}
+                                                  </div>
+                                                  <div className="flex items-center gap-3 text-slate-600 mt-0.5">
+                                                    {s.avgHr ? <span><span className="text-red-400">♥</span> {s.avgHr}</span> : null}
+                                                    {s.pace ? <span><span className="text-blue-400">⏱</span> {s.pace}/km</span> : null}
+                                                    {!s.avgHr && !s.pace && s.duration > 0 ? <span className="text-slate-400">{Math.round(s.duration)} min</span> : null}
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                          {(totalKm > 0 || totalEquiv > 0) && sessions.length > 1 && (
+                                            <div className="mt-1.5 pt-1.5 border-t border-emerald-100 text-xs text-emerald-700 font-medium">
+                                              total: {(totalKm + totalEquiv).toFixed(1)} km
+                                            </div>
+                                          )}
+                                          {plannedDetail && (
+                                            <div className="mt-1.5 pt-1.5 border-t border-emerald-100 text-xs text-slate-400">
+                                              <span className="line-through">plan: {plannedDetail.km > 0 ? `${plannedDetail.km}km ` : ""}{plannedDetail.type}</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+
+                                    // Fallback: raw actual string (static data without structured detail)
                                     if (actualStr) {
                                       return (
                                         <div key={dayKey} className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
@@ -1238,7 +1291,7 @@ export default function Dashboard() {
                                       );
                                     }
 
-                                    // Past day without actual → show a muted "no activity" card so the week is complete
+                                    // Past day without actual → show a muted "missed" card
                                     if (!isDayFuture && plannedDetail) {
                                       return (
                                         <div key={dayKey} className="bg-white rounded-lg p-3 border border-dashed border-slate-200 opacity-60">

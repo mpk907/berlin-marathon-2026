@@ -110,6 +110,10 @@ for (const week of trainingPlan) {
   if (computed > 0) week.total = Math.round(computed * 10) / 10;
 }
 
+// Per-session actual details (populated by WHOOP sync — empty here as fallback)
+// Shape: { [weekNumber]: { [dayKey]: [{type, distance, duration, pace, avgHr, z2, kmEquiv}] } }
+export const dailyActualDetails = {};
+
 // Actuals per day for completed weeks (from Activity Log)
 export const weeklyActuals = {
   2:  { sat: "🏃4.5", sun: "🏃3.1" },
