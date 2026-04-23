@@ -96,6 +96,7 @@ export default function Dashboard() {
   const [tokenValue, setTokenValue] = useState("");
   const [undoState, setUndoState] = useState(null); // { plan, timeout } for undo toast
   const [selectedSession, setSelectedSession] = useState(null); // { weekNum, day } — tap-to-swap on mobile
+  const [dismissedDoneEarly, setDismissedDoneEarly] = useState(false);
 
   // ═══ REPLAN STATE ═══
   const [showReplan, setShowReplan] = useState(false);
@@ -644,6 +645,81 @@ export default function Dashboard() {
     return null;
   }, [trainingPlan, weeklyActuals]);
 
+  // ═══ DONE-EARLY DETECTION — did the user do today's planned session yesterday? ═══
+  // Fires when today's planned run matches yesterday's actual closely AND yesterday was
+  // supposed to be rest or a much lighter day. Offers to swap the two days in the plan.
+  const doneEarly = useMemo(() => {
+    if (!nextTraining || nextTraining.when !== "Today" || nextTraining.completedToday) return null;
+    if (dismissedDoneEarly) return null;
+
+    const plannedKm = parseFloat(nextTraining.session.match(/^(\d+\.?\d*)/)?.[1]);
+    if (!plannedKm || plannedKm < 2) return null;
+
+    const dayKeys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    const dayLabels = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const week1Start = new Date(2026, 0, 5);
+    const yDaysSinceW1 = Math.floor((yesterday - week1Start) / 86400000);
+    const yWeek = Math.floor(yDaysSinceW1 / 7) + 1;
+    // Only handle same-week for now — cross-week swap needs a different mechanism
+    if (yWeek !== nextTraining.week) return null;
+
+    const yDayKey = dayKeys[yesterday.getDay()];
+    const yDayLabel = dayLabels[yesterday.getDay()];
+    const todayDayKey = dayKeys[now.getDay()];
+
+    const yWeekPlan = trainingPlan.find(w => w.week === yWeek);
+    if (!yWeekPlan) return null;
+    const yPlannedStr = yWeekPlan[yDayKey];
+    const yPlannedKm = yPlannedStr && yPlannedStr !== "Rest" && !yPlannedStr.includes("✈️")
+      ? parseFloat(yPlannedStr.match(/^(\d+\.?\d*)/)?.[1] || 0)
+      : 0;
+
+    // Only prompt if yesterday was Rest or notably lighter than today's planned
+    if (yPlannedKm > plannedKm * 0.6) return null;
+
+    // Find a run among yesterday's actuals close to today's planned distance
+    const sessions = dailyActualDetails[yWeek]?.[yDayKey];
+    const actualStr = weeklyActuals[yWeek]?.[yDayKey];
+    let matchDistance = null;
+    if (sessions && sessions.length > 0) {
+      const m = sessions.find(s => s.type === "Run" && s.distance > 0.5 &&
+        Math.abs(s.distance - plannedKm) / plannedKm < 0.25);
+      if (m) matchDistance = m.distance;
+    }
+    if (matchDistance === null && actualStr) {
+      const runMatch = actualStr.match(/🏃(\d+\.?\d*)/);
+      if (runMatch) {
+        const dist = parseFloat(runMatch[1]);
+        if (Math.abs(dist - plannedKm) / plannedKm < 0.25) matchDistance = dist;
+      }
+    }
+    if (matchDistance === null) return null;
+
+    return {
+      week: yWeek,
+      yesterdayDayKey: yDayKey,
+      yesterdayDayLabel: yDayLabel,
+      todayDayKey,
+      matchDistance,
+      plannedKm,
+      plannedSession: nextTraining.session,
+    };
+  }, [nextTraining, trainingPlan, weeklyActuals, dailyActualDetails, dismissedDoneEarly]);
+
+  const confirmDoneEarly = useCallback(() => {
+    if (!doneEarly) return;
+    swapSessions(doneEarly.week, doneEarly.yesterdayDayKey, doneEarly.todayDayKey);
+    setDismissedDoneEarly(true);
+  }, [doneEarly, swapSessions]);
+
+  const dismissDoneEarlyPrompt = useCallback(() => {
+    setDismissedDoneEarly(true);
+  }, []);
+
   const filteredPlan = useMemo(() => {
     if (planView === "upcoming") return trainingPlan.filter(w => w.week >= currentWeek - 1 && w.week <= currentWeek + 5);
     if (planView === "past") return trainingPlan.filter(w => w.week <= currentWeek);
@@ -825,6 +901,32 @@ export default function Dashboard() {
                 {(nextTraining.detail.type === "long" || nextTraining.detail.type === "long easy" || nextTraining.detail.type === "easy/long") && <span className="text-blue-200 text-xs">Start easy, stay patient. Negative split the last third.</span>}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ DONE-EARLY PROMPT — offer to swap today↔yesterday if planned matches yesterday's actual ═══ */}
+      {doneEarly && (
+        <div className="px-4 sm:px-8 -mt-2 mb-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start sm:items-center gap-3 flex-col sm:flex-row">
+            <div className="flex-1 text-sm text-amber-900">
+              <span className="font-semibold">Schon {doneEarly.yesterdayDayLabel} erledigt?</span>{" "}
+              Deine {doneEarly.matchDistance.toFixed(1)} km gestern passen zum heutigen Plan ({doneEarly.plannedKm} km). Soll ich die Tage im Plan tauschen?
+            </div>
+            <div className="flex gap-2 self-end sm:self-auto">
+              <button
+                onClick={dismissDoneEarlyPrompt}
+                className="text-xs font-medium text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-100"
+              >
+                Ignorieren
+              </button>
+              <button
+                onClick={confirmDoneEarly}
+                className="text-xs font-semibold bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700"
+              >
+                Ja, verschieben
+              </button>
+            </div>
           </div>
         </div>
       )}
