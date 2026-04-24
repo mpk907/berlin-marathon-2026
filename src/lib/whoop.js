@@ -19,6 +19,17 @@ const SPORT_ID_MAP = {
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+// Run-equivalent conversion factors (km per minute of activity).
+// Rooted in Daniels' rule of thumb: cross-training ≈ 0.5× running stress per
+// minute, high-impact sport with sprints ≈ equal. At ~7:30/km easy pace you
+// cover 0.133 km per minute of running, so:
+//   spin     = 0.5  × 0.133 ≈ 0.067  (60 min ≈ 4 km)
+//   football = 1.0  × 0.133 ≈ 0.133  (60 min ≈ 8 km)
+// Applied to duration only — ignoring actual distance on the bike, since
+// 30 km of pedalling is not equivalent to 30 km of running training stress.
+const SPIN_KM_PER_MIN = 0.067;
+const FOOTBALL_KM_PER_MIN = 0.133;
+
 /**
  * Fetch all workouts from WHOOP Developer API v1.
  * Paginates using nextToken.
@@ -249,8 +260,8 @@ export function processActivities(activities) {
     const spin = acts.filter(a => a.type === "Spin");
 
     const runKm = runs.reduce((s, a) => s + a.distance, 0);
-    const footballEquiv = football.reduce((s, a) => s + a.duration * 0.11, 0);
-    const spinKm = spin.reduce((s, a) => s + (a.distance > 0 ? a.distance : a.duration * 0.25), 0);
+    const footballEquiv = football.reduce((s, a) => s + a.duration * FOOTBALL_KM_PER_MIN, 0);
+    const spinEquiv = spin.reduce((s, a) => s + a.duration * SPIN_KM_PER_MIN, 0);
 
     const longRun = runs.length > 0
       ? Math.max(...runs.map(a => a.distance))
@@ -295,7 +306,7 @@ export function processActivities(activities) {
       dates: dateStr,
       run: Math.round(runKm * 10) / 10,
       football: Math.round(footballEquiv * 10) / 10,
-      spin: Math.round(spinKm * 10) / 10,
+      spin: Math.round(spinEquiv * 10) / 10,
       plan: 0,
       longRun: Math.round(longRun * 10) / 10,
       avgHR,
@@ -317,8 +328,8 @@ export function processActivities(activities) {
       }
       // Per-session detail with km-equivalent for non-run activities
       let kmEquiv = null;
-      if (act.type === "Football") kmEquiv = Math.round(act.duration * 0.11 * 10) / 10;
-      else if (act.type === "Spin") kmEquiv = Math.round((act.distance > 0 ? act.distance : act.duration * 0.25) * 10) / 10;
+      if (act.type === "Football") kmEquiv = Math.round(act.duration * FOOTBALL_KM_PER_MIN * 10) / 10;
+      else if (act.type === "Spin") kmEquiv = Math.round(act.duration * SPIN_KM_PER_MIN * 10) / 10;
       dayDetailMap[dow].push({
         type: act.type,
         distance: act.distance || 0,
