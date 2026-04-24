@@ -96,6 +96,15 @@ export const trainingPlan = [
     detail: { tue: {km:5,type:"easy",hr:"Z1 < 127",pace:"8:30+"}, thu: {km:5,type:"easy + strides",hr:"Z1-Z2, 4x80m strides",pace:"8:30 + strides"}, sat: {km:4,type:"shakeout",hr:"Z1 < 127",pace:"8:00 gentle"}, sun: {km:6,type:"easy",hr:"Z1-Z2 < 146",pace:"8:00+"}} },
   { week: 38, dates: "21-28 Sep", total: 42.2, mon: "Rest", tue: "4 shakeout", wed: "Rest", thu: "3 easy", fri: "Rest", sat: "Rest", sun: "42.2 RACE", notes: "BERLIN",
     detail: { tue: {km:4,type:"shakeout",hr:"Z1 < 127",pace:"8:00 gentle"}, thu: {km:3,type:"easy",hr:"Z1 < 127",pace:"8:30+ very easy"}, sun: {km:42.2,type:"RACE",hr:"Z2-Z3: start 6:40, hold 6:30",pace:"Start conservative, negative split"}} },
+  // ── Recovery block (Jack Daniels: ~1 easy day per mile raced ≈ 4 weeks) ──
+  { week: 39, dates: "29 Sep-5 Oct", total: 5, mon: "Rest", tue: "Rest", wed: "Rest", thu: "Rest", fri: "Rest", sat: "2 walk", sun: "3 shakeout", notes: "RECOVERY 1 — rest + celebrate",
+    detail: { sat: {km:2,type:"recovery",hr:"Z1 < 127",pace:"walk or slow jog"}, sun: {km:3,type:"shakeout",hr:"Z1 < 127",pace:"8:30+ very easy, stop if anything hurts"}} },
+  { week: 40, dates: "6-12 Oct", total: 12, mon: "Rest", tue: "3 easy", wed: "Rest", thu: "4 easy", fri: "Rest", sat: "Rest", sun: "5 easy", notes: "RECOVERY 2 — easy return",
+    detail: { tue: {km:3,type:"recovery",hr:"Z1 < 127",pace:"8:30+"}, thu: {km:4,type:"recovery",hr:"Z1-Z2",pace:"8:15+"}, sun: {km:5,type:"easy",hr:"Z2 127-146",pace:"7:45-8:15"}} },
+  { week: 41, dates: "13-19 Oct", total: 22, mon: "Rest", tue: "5 easy", wed: "Rest", thu: "5 easy", fri: "Rest", sat: "4 easy", sun: "8 easy", notes: "RECOVERY 3 — rebuild base",
+    detail: { tue: {km:5,type:"easy",hr:"Z2 127-146",pace:"7:45-8:15"}, thu: {km:5,type:"easy",hr:"Z2 127-146",pace:"7:30-8:00"}, sat: {km:4,type:"easy",hr:"Z1-Z2",pace:"7:45-8:15"}, sun: {km:8,type:"easy",hr:"Z2 127-146",pace:"7:30-8:00"}} },
+  { week: 42, dates: "20-26 Oct", total: 30, mon: "Rest", tue: "6 easy", wed: "4 easy", thu: "6 easy", fri: "Rest", sat: "4 easy", sun: "10 easy", notes: "RECOVERY 4 — back to base",
+    detail: { tue: {km:6,type:"easy",hr:"Z2 127-146",pace:"7:30-8:00"}, wed: {km:4,type:"easy",hr:"Z2 127-146",pace:"7:30-8:00"}, thu: {km:6,type:"easy",hr:"Z2 127-146",pace:"7:30-8:00"}, sat: {km:4,type:"easy",hr:"Z2 127-146",pace:"7:30-8:00"}, sun: {km:10,type:"easy",hr:"Z2 127-146",pace:"7:30-8:00"}} },
 ];
 
 // Auto-fix: recompute week totals from daily sessions to ensure consistency

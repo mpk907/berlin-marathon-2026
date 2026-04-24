@@ -147,12 +147,13 @@ export default function Dashboard() {
   const [confirmReset, setConfirmReset] = useState(false);
 
   // ═══ Dynamic current week from today's date ═══
+  const maxPlanWeek = useMemo(() => trainingPlan.length > 0 ? Math.max(...trainingPlan.map(w => w.week)) : 38, [trainingPlan]);
   const currentWeek = useMemo(() => {
     const week1Start = new Date(2026, 0, 5); // Mon Jan 5 2026
     const now = new Date();
     const diffDays = Math.floor((now - week1Start) / 86400000);
-    return Math.max(1, Math.min(38, Math.floor(diffDays / 7) + 1));
-  }, []);
+    return Math.max(1, Math.min(maxPlanWeek, Math.floor(diffDays / 7) + 1));
+  }, [maxPlanWeek]);
 
   useEffect(() => {
     // Load cached data first (fast)
@@ -422,9 +423,9 @@ export default function Dashboard() {
     for (const w of weeklyData) {
       if (w.longRun && w.longRun > 0) actualMap[w.week] = w.longRun;
     }
-    // Combine into dataset for all 38 weeks
+    // Combine into dataset across the full plan (incl. recovery block)
     const data = [];
-    for (let wk = 1; wk <= 38; wk++) {
+    for (let wk = 1; wk <= maxPlanWeek; wk++) {
       const plan = planMap[wk] || null;
       const actual = actualMap[wk] || null;
       if (plan || actual) {
@@ -432,7 +433,7 @@ export default function Dashboard() {
       }
     }
     return data;
-  }, [weeklyData, trainingPlan]);
+  }, [weeklyData, trainingPlan, maxPlanWeek]);
 
   // Zone 2 trend — include ALL weeks with data (not just z2 > 0)
   const z2TrendData = useMemo(() => {
@@ -622,7 +623,12 @@ export default function Dashboard() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold">Berlin Marathon 2026</h1>
-            <p className="text-slate-400 text-sm mt-1">28 September 2026 · {stats.weeksToRace} weeks to go</p>
+            <p className="text-slate-400 text-sm mt-1">
+              28 September 2026 ·{" "}
+              {currentWeek > 38
+                ? `Recovery week ${currentWeek - 38} of ${maxPlanWeek - 38}`
+                : `${stats.weeksToRace} weeks to go`}
+            </p>
           </div>
           <div className="sm:text-right">
             <div className="text-sm text-slate-400 mb-1">Projected finish</div>
@@ -1032,7 +1038,7 @@ export default function Dashboard() {
                 <span className="text-xs text-slate-400 hidden sm:inline">Tap a future session to move it</span>
               </div>
               <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
-                {[["upcoming", "Next 6 Weeks"], ["past", "Completed"], ["all", "All 38"]].map(([id, label]) => (
+                {[["upcoming", "Next 6 Weeks"], ["past", "Completed"], ["all", `All ${maxPlanWeek}`]].map(([id, label]) => (
                   <button key={id} onClick={() => setPlanView(id)}
                     className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${planView === id ? "bg-white text-slate-800 shadow-sm" : "text-slate-400"}`}>
                     {label}
