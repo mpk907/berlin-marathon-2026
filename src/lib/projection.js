@@ -10,9 +10,20 @@
 const MARATHON_KM = 42.195;
 const Z2_HR_MIN = 125;
 const Z2_HR_MAX = 150;
-const MIN_RUN_KM = 3;
+// Restrict the aerobic pace signal to short-to-mid runs.
+// Long runs are intentionally slower (fatigue, more time in fat-burn) and
+// would drag the projection the wrong way as training volume grows.
+const MIN_RUN_KM = 4;
+const MAX_RUN_KM = 12;
 const RACE_PACE_ADJ_Z2 = 30;      // seconds/km faster than Z2 pace
 const RACE_PACE_ADJ_GENERAL = 45; // seconds/km faster than mixed-effort avg
+const DEFAULT_GOAL_PACE_SEC = 6 * 60 + 45; // 6:45/km
+
+export const DEFAULT_TARGET_PACE_SEC = DEFAULT_GOAL_PACE_SEC;
+export const DEFAULT_TARGET_MARATHON_SEC = DEFAULT_GOAL_PACE_SEC * MARATHON_KM;
+export function marathonTimeFromPaceSec(paceSec) {
+  return paceSec * MARATHON_KM;
+}
 
 export function paceStrToSec(pace) {
   if (!pace || typeof pace !== "string") return null;
@@ -38,7 +49,7 @@ export function secToTimeStr(sec) {
 }
 
 function aggregateRuns(runs) {
-  const withPace = runs.filter(r => r.pace && r.distance >= MIN_RUN_KM);
+  const withPace = runs.filter(r => r.pace && r.distance >= MIN_RUN_KM && r.distance <= MAX_RUN_KM);
   if (withPace.length === 0) return null;
 
   const z2 = withPace.filter(r => r.avgHr && r.avgHr >= Z2_HR_MIN && r.avgHr <= Z2_HR_MAX);
@@ -171,5 +182,48 @@ export function computeProjectionTrend(dailyActualDetails, weeklyData, maxWeek) 
   return trend;
 }
 
-export const TARGET_PACE_SEC = 6 * 60 + 45; // 6:45/km plan goal
-export const TARGET_MARATHON_SEC = TARGET_PACE_SEC * MARATHON_KM;
+/**
+ * Per-week aerobic-fitness trend: weighted-average Z2 pace on 4–12 km runs.
+ * Lower pace at the same HR = fitter. Designed to IMPROVE over training since
+ * long-run fatigue is excluded from the signal.
+ *
+ * Uses a 3-week rolling window for smoothing.
+ */
+export function computeAerobicFitnessTrend(dailyActualDetails, maxWeek) {
+  const trend = [];
+  for (let wk = 1; wk <= maxWeek; wk++) {
+    const from = Math.max(1, wk - 2);
+    let totalKm = 0, totalPaceSec = 0, hrSum = 0, hrCount = 0, runs = 0;
+    for (let w = from; w <= wk; w++) {
+      const weekDays = (dailyActualDetails || {})[w];
+      if (!weekDays) continue;
+      for (const sessions of Object.values(weekDays)) {
+        for (const s of sessions) {
+          if (s.type !== "Run") continue;
+          if (!s.pace || !s.avgHr) continue;
+          if (s.distance < MIN_RUN_KM || s.distance > MAX_RUN_KM) continue;
+          if (s.avgHr < Z2_HR_MIN || s.avgHr > Z2_HR_MAX) continue;
+          const paceSec = paceStrToSec(s.pace);
+          if (paceSec === null) continue;
+          totalKm += s.distance;
+          totalPaceSec += paceSec * s.distance;
+          hrSum += s.avgHr;
+          hrCount++;
+          runs++;
+        }
+      }
+    }
+    if (totalKm >= 5 && hrCount > 0) {
+      trend.push({
+        week: wk,
+        paceSec: Math.round(totalPaceSec / totalKm),
+        avgHr: Math.round(hrSum / hrCount),
+        runs,
+        km: Math.round(totalKm * 10) / 10,
+      });
+    } else {
+      trend.push({ week: wk, paceSec: null, avgHr: null, runs: 0, km: 0 });
+    }
+  }
+  return trend;
+}

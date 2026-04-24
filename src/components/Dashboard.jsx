@@ -11,12 +11,15 @@ import {
 } from "@/lib/data";
 import {
   computeCurrentProjection,
-  computeProjectionTrend,
+  computeAerobicFitnessTrend,
   secToPaceStr,
   secToTimeStr,
-  TARGET_MARATHON_SEC,
-  TARGET_PACE_SEC,
+  paceStrToSec,
+  marathonTimeFromPaceSec,
+  DEFAULT_TARGET_PACE_SEC,
 } from "@/lib/projection";
+
+const GOAL_PACE_STORAGE_KEY = "berlin2026:goalPaceSec";
 
 const KPI = ({ label, value, sub, color = "text-slate-800" }) => (
   <div className="bg-white rounded-xl p-3 sm:p-5 shadow-sm border border-slate-100">
@@ -87,6 +90,33 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("overview");
   const [planView, setPlanView] = useState("upcoming");
   const [expandedWeek, setExpandedWeek] = useState(null);
+  const [goalPaceSec, setGoalPaceSec] = useState(DEFAULT_TARGET_PACE_SEC);
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [goalDraft, setGoalDraft] = useState("");
+
+  // Hydrate goal from localStorage (browser only)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem(GOAL_PACE_STORAGE_KEY);
+    const parsed = parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed >= 240 && parsed <= 600) setGoalPaceSec(parsed);
+  }, []);
+
+  const saveGoalPace = useCallback((sec) => {
+    setGoalPaceSec(sec);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(GOAL_PACE_STORAGE_KEY, String(sec));
+    }
+  }, []);
+
+  const submitGoalEdit = useCallback(() => {
+    const trimmed = goalDraft.trim();
+    const sec = paceStrToSec(trimmed);
+    if (sec !== null && sec >= 240 && sec <= 600) saveGoalPace(sec);
+    setEditingGoal(false);
+  }, [goalDraft, saveGoalPace]);
+
+  const goalMarathonSec = useMemo(() => marathonTimeFromPaceSec(goalPaceSec), [goalPaceSec]);
 
   // ═══ LIVE DATA: fetch from API, fall back to static ═══
   const [weeklyData, setWeeklyData] = useState(staticWeeklyData);
@@ -553,14 +583,20 @@ export default function Dashboard() {
     return computeCurrentProjection(dailyActualDetails, weeklyData, currentWeek);
   }, [dailyActualDetails, weeklyData, currentWeek]);
 
-  const projectionTrend = useMemo(() => {
+  const fitnessTrend = useMemo(() => {
     const maxWk = Math.max(currentWeek, ...weeklyData.map(w => w.week || 0));
-    const trend = computeProjectionTrend(dailyActualDetails, weeklyData, maxWk);
-    const targetMin = Math.round(TARGET_MARATHON_SEC / 60);
-    return trend
-      .filter(t => t.marathonMin !== null)
-      .map(t => ({ week: t.week, projection: t.marathonMin, target: targetMin }));
+    return computeAerobicFitnessTrend(dailyActualDetails, maxWk).filter(t => t.paceSec !== null);
   }, [dailyActualDetails, weeklyData, currentWeek]);
+
+  const fitnessSummary = useMemo(() => {
+    if (fitnessTrend.length === 0) return null;
+    const latest = fitnessTrend[fitnessTrend.length - 1];
+    // Compare to 4 weeks ago (or oldest available)
+    const baselineIdx = Math.max(0, fitnessTrend.length - 5);
+    const baseline = fitnessTrend[baselineIdx];
+    const deltaSec = baseline && baseline.week !== latest.week ? latest.paceSec - baseline.paceSec : null;
+    return { latest, baseline, deltaSec };
+  }, [fitnessTrend]);
 
   const filteredPlan = useMemo(() => {
     if (planView === "upcoming") return trainingPlan.filter(w => w.week >= currentWeek - 1 && w.week <= currentWeek + 5);
@@ -599,9 +635,12 @@ export default function Dashboard() {
               )}
             </div>
             <div className="text-slate-500 text-xs mt-0.5">
-              {projection
-                ? `from ${projection.basedOnRuns} run${projection.basedOnRuns === 1 ? "" : "s"} · ${projection.method === "z2-pace" ? "Z2 pace" : projection.method === "avg-pace" ? "avg pace" : "weekly avg"}`
-                : "Log runs to see projection"}
+              Goal {secToTimeStr(goalMarathonSec)} @ {secToPaceStr(goalPaceSec)}/km
+              {projection && (
+                <span className="ml-2">
+                  · {projection.basedOnRuns} run{projection.basedOnRuns === 1 ? "" : "s"} · {projection.method === "z2-pace" ? "Z2 pace" : projection.method === "avg-pace" ? "avg pace" : "weekly avg"}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -793,100 +832,110 @@ export default function Dashboard() {
         {/* ═══ OVERVIEW ═══ */}
         {activeTab === "overview" && (
           <div className="space-y-6">
-            {/* Race Projection card */}
-            {projection && (
-              <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-xl p-6 shadow-lg text-white">
-                <div className="flex items-start justify-between gap-4 mb-4">
+            {/* Aerobic fitness trend — pace at Z2 HR on short-mid runs, lower = fitter */}
+            {fitnessSummary && (
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+                <div className="flex items-start justify-between gap-4 mb-3">
                   <div>
-                    <div className="text-xs font-medium text-indigo-200 uppercase tracking-wider mb-1">Race Projection</div>
-                    <div className="text-xs text-indigo-200">Berlin · 28 Sep 2026</div>
+                    <h3 className="text-sm font-semibold text-slate-700">Aerobic Fitness</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Pace at Z2 HR on {`${4}–${12}`} km runs — lower is fitter. Long runs excluded.
+                    </p>
                   </div>
-                  <div className="text-xs bg-white/10 px-2 py-1 rounded-md text-indigo-100">
-                    {projection.method === "z2-pace" ? "Z2 pace" :
-                     projection.method === "avg-pace" ? "avg pace" : "weekly avg"}
+                  <div className="text-xs bg-slate-100 px-2 py-1 rounded-md text-slate-600">
+                    3-week rolling
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 items-end">
                   <div>
-                    <div className="text-indigo-200 text-xs mb-1">Projected finish</div>
-                    <div className="text-4xl sm:text-5xl font-bold tracking-tight">{secToTimeStr(projection.marathonSec)}</div>
-                    <div className="text-indigo-200 text-sm mt-1">@ {secToPaceStr(projection.racePaceSec)} /km</div>
+                    <div className="text-xs text-slate-400 mb-1">Current</div>
+                    <div className="text-3xl sm:text-4xl font-bold text-indigo-700">
+                      {secToPaceStr(fitnessSummary.latest.paceSec)} <span className="text-lg text-slate-400 font-normal">/km</span>
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      @ {fitnessSummary.latest.avgHr} bpm · {fitnessSummary.latest.runs} run{fitnessSummary.latest.runs === 1 ? "" : "s"} · {fitnessSummary.latest.km} km
+                    </div>
                   </div>
                   <div>
-                    <div className="text-indigo-200 text-xs mb-1">Plan goal</div>
-                    <div className="text-xl font-semibold">{secToTimeStr(TARGET_MARATHON_SEC)}</div>
-                    <div className="text-indigo-200 text-sm mt-1">@ {secToPaceStr(TARGET_PACE_SEC)} /km</div>
-                    {(() => {
-                      const deltaSec = projection.marathonSec - TARGET_MARATHON_SEC;
-                      const deltaMin = Math.round(Math.abs(deltaSec) / 60);
-                      const ahead = deltaSec < 0;
-                      return (
-                        <div className={`text-sm font-semibold mt-2 ${ahead ? "text-emerald-300" : "text-amber-300"}`}>
-                          {ahead ? "▼" : "▲"} {deltaMin} min {ahead ? "ahead of" : "behind"} goal
+                    <div className="text-xs text-slate-400 mb-1">
+                      vs W{fitnessSummary.baseline.week}
+                    </div>
+                    {fitnessSummary.deltaSec === null ? (
+                      <div className="text-sm text-slate-400">—</div>
+                    ) : (
+                      <>
+                        <div className={`text-2xl font-bold ${fitnessSummary.deltaSec < -1 ? "text-emerald-600" : fitnessSummary.deltaSec > 1 ? "text-amber-600" : "text-slate-500"}`}>
+                          {fitnessSummary.deltaSec < 0 ? "▼" : fitnessSummary.deltaSec > 0 ? "▲" : "="} {Math.abs(Math.round(fitnessSummary.deltaSec))} s/km
                         </div>
-                      );
-                    })()}
-                  </div>
-                  <div>
-                    <div className="text-indigo-200 text-xs mb-1">Based on</div>
-                    <div className="text-lg font-medium">{projection.basedOnRuns} run{projection.basedOnRuns === 1 ? "" : "s"}</div>
-                    <div className="text-indigo-200 text-sm">{projection.basedOnKm} km · last 4 weeks</div>
-                    {projection.avgHr && (
-                      <div className="text-indigo-200 text-sm mt-1">avg HR {projection.avgHr}</div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          {fitnessSummary.deltaSec < -1 ? "faster at same effort" :
+                           fitnessSummary.deltaSec > 1 ? "slower at same effort" :
+                           "holding steady"}
+                        </div>
+                      </>
                     )}
                   </div>
-                </div>
-                {projectionTrend.length >= 3 && (
-                  <div className="mt-4 pt-4 border-t border-white/10">
-                    <div className="flex items-center justify-between mb-2 text-xs text-indigo-200">
-                      <span>Trend (3-week rolling)</span>
-                      <span className="flex items-center gap-3">
-                        <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-amber-200"></span>projection</span>
-                        <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 border-t border-dashed border-green-300"></span>goal 4:44</span>
-                      </span>
+                  <div>
+                    <div className="text-xs text-slate-400 mb-1">Goal pace</div>
+                    {editingGoal ? (
+                      <form onSubmit={(e) => { e.preventDefault(); submitGoalEdit(); }} className="flex items-center gap-2">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={goalDraft}
+                          onChange={(e) => setGoalDraft(e.target.value)}
+                          onBlur={submitGoalEdit}
+                          placeholder="6:45"
+                          className="w-20 border border-slate-200 rounded-md px-2 py-1 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                        />
+                        <span className="text-xs text-slate-400">m:ss /km</span>
+                      </form>
+                    ) : (
+                      <button
+                        onClick={() => { setGoalDraft(secToPaceStr(goalPaceSec)); setEditingGoal(true); }}
+                        className="text-left text-2xl font-bold text-slate-700 hover:text-indigo-600 transition group"
+                        title="Click to edit"
+                      >
+                        {secToPaceStr(goalPaceSec)} <span className="text-base text-slate-400 font-normal">/km</span>
+                        <span className="text-xs text-slate-300 group-hover:text-indigo-400 ml-1">✎</span>
+                      </button>
+                    )}
+                    <div className="text-xs text-slate-500 mt-1">
+                      = {secToTimeStr(goalMarathonSec)} marathon
                     </div>
-                    <ResponsiveContainer width="100%" height={100}>
-                      <LineChart data={projectionTrend} margin={{ top: 4, right: 8, left: 0, bottom: 18 }}>
-                        <XAxis
-                          dataKey="week"
-                          tick={{ fontSize: 10, fill: "#c7d2fe" }}
-                          axisLine={false}
-                          tickLine={false}
-                          tickFormatter={v => `W${v}`}
-                          label={{ value: "Training week", position: "insideBottom", offset: -6, fill: "#c7d2fe", fontSize: 10 }}
-                        />
-                        <YAxis
-                          tick={{ fontSize: 10, fill: "#c7d2fe" }}
-                          axisLine={false}
-                          tickLine={false}
-                          domain={["dataMin - 10", "dataMax + 10"]}
-                          tickFormatter={v => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, "0")}`}
-                          reversed
-                          width={40}
-                        />
-                        <Tooltip
-                          contentStyle={{ background: "#312e81", border: "none", borderRadius: 8, fontSize: 12 }}
-                          labelStyle={{ color: "#c7d2fe" }}
-                          labelFormatter={(v) => `Training week ${v}`}
-                          formatter={(val, name) => {
-                            const h = Math.floor(val / 60);
-                            const m = val % 60;
-                            return [`${h}:${String(m).padStart(2, "0")}`, name === "projection" ? "Projection" : "Goal"];
-                          }}
-                        />
-                        <Line type="monotone" dataKey="projection" stroke="#fde68a" strokeWidth={2.5} dot={{ r: 3, fill: "#fde68a" }} isAnimationActive={false} />
-                        <Line type="monotone" dataKey="target" stroke="#86efac" strokeWidth={1.5} strokeDasharray="4 4" dot={false} isAnimationActive={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
                   </div>
-                )}
-                <div className="text-xs text-indigo-200 mt-3">
-                  {projection.method === "z2-pace"
-                    ? "Z2 pace − 30 s/km race-effort buffer × 42.195 km."
-                    : projection.method === "avg-pace"
-                    ? "Average run pace − 45 s/km race-effort buffer × 42.195 km. Sync more Z2 runs for a tighter estimate."
-                    : "Weekly average pace − 45 s/km buffer. Sync per-session details for a tighter estimate."}
                 </div>
+
+                {fitnessTrend.length >= 3 && (
+                  <ResponsiveContainer width="100%" height={180}>
+                    <LineChart data={fitnessTrend} margin={{ top: 8, right: 12, left: 0, bottom: 22 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis
+                        dataKey="week"
+                        tick={{ fontSize: 11, fill: "#64748b" }}
+                        tickFormatter={v => `W${v}`}
+                        label={{ value: "Training week", position: "insideBottom", offset: -8, fill: "#64748b", fontSize: 11 }}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: "#64748b" }}
+                        domain={["dataMin - 10", "dataMax + 10"]}
+                        tickFormatter={v => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, "0")}`}
+                        reversed
+                        width={50}
+                      />
+                      <Tooltip
+                        labelFormatter={(v) => `Training week ${v}`}
+                        formatter={(val, name, { payload }) => {
+                          if (name === "Goal") return [secToPaceStr(val), name];
+                          return [`${secToPaceStr(val)} @ ${payload.avgHr} bpm`, "Pace at Z2 HR"];
+                        }}
+                      />
+                      <Line type="monotone" dataKey="paceSec" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 4, fill: "#4f46e5" }} isAnimationActive={false} name="Pace at Z2 HR" />
+                      <Line type="monotone" dataKey={() => goalPaceSec} stroke="#10b981" strokeWidth={1.5} strokeDasharray="4 4" dot={false} isAnimationActive={false} name="Goal" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             )}
 
