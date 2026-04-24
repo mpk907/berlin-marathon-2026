@@ -833,111 +833,125 @@ export default function Dashboard() {
         {activeTab === "overview" && (
           <div className="space-y-6">
             {/* Aerobic fitness trend — pace at Z2 HR on short-mid runs, lower = fitter */}
-            {fitnessSummary && (
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
-                <div className="flex items-start justify-between gap-4 mb-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-700">Aerobic Fitness</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Pace at Z2 HR on {`${4}–${12}`} km runs — lower is fitter. Long runs excluded.
-                    </p>
-                  </div>
-                  <div className="text-xs bg-slate-100 px-2 py-1 rounded-md text-slate-600">
-                    3-week rolling
-                  </div>
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+              <div className="flex items-start justify-between gap-4 mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700">Aerobic Fitness</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Pace at Z2 HR (125–150 bpm) on 4–12 km runs — lower is fitter. Long runs excluded.
+                  </p>
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 items-end">
-                  <div>
-                    <div className="text-xs text-slate-400 mb-1">Current</div>
-                    <div className="text-3xl sm:text-4xl font-bold text-indigo-700">
-                      {secToPaceStr(fitnessSummary.latest.paceSec)} <span className="text-lg text-slate-400 font-normal">/km</span>
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      @ {fitnessSummary.latest.avgHr} bpm · {fitnessSummary.latest.runs} run{fitnessSummary.latest.runs === 1 ? "" : "s"} · {fitnessSummary.latest.km} km
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-400 mb-1">
-                      vs W{fitnessSummary.baseline.week}
-                    </div>
-                    {fitnessSummary.deltaSec === null ? (
-                      <div className="text-sm text-slate-400">—</div>
-                    ) : (
-                      <>
-                        <div className={`text-2xl font-bold ${fitnessSummary.deltaSec < -1 ? "text-emerald-600" : fitnessSummary.deltaSec > 1 ? "text-amber-600" : "text-slate-500"}`}>
-                          {fitnessSummary.deltaSec < 0 ? "▼" : fitnessSummary.deltaSec > 0 ? "▲" : "="} {Math.abs(Math.round(fitnessSummary.deltaSec))} s/km
-                        </div>
-                        <div className="text-xs text-slate-500 mt-1">
-                          {fitnessSummary.deltaSec < -1 ? "faster at same effort" :
-                           fitnessSummary.deltaSec > 1 ? "slower at same effort" :
-                           "holding steady"}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-400 mb-1">Goal pace</div>
-                    {editingGoal ? (
-                      <form onSubmit={(e) => { e.preventDefault(); submitGoalEdit(); }} className="flex items-center gap-2">
-                        <input
-                          autoFocus
-                          type="text"
-                          value={goalDraft}
-                          onChange={(e) => setGoalDraft(e.target.value)}
-                          onBlur={submitGoalEdit}
-                          placeholder="6:45"
-                          className="w-20 border border-slate-200 rounded-md px-2 py-1 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                        />
-                        <span className="text-xs text-slate-400">m:ss /km</span>
-                      </form>
-                    ) : (
-                      <button
-                        onClick={() => { setGoalDraft(secToPaceStr(goalPaceSec)); setEditingGoal(true); }}
-                        className="text-left text-2xl font-bold text-slate-700 hover:text-indigo-600 transition group"
-                        title="Click to edit"
-                      >
-                        {secToPaceStr(goalPaceSec)} <span className="text-base text-slate-400 font-normal">/km</span>
-                        <span className="text-xs text-slate-300 group-hover:text-indigo-400 ml-1">✎</span>
-                      </button>
-                    )}
-                    <div className="text-xs text-slate-500 mt-1">
-                      = {secToTimeStr(goalMarathonSec)} marathon
-                    </div>
-                  </div>
+                <div className="text-xs bg-slate-100 px-2 py-1 rounded-md text-slate-600">
+                  3-week rolling
                 </div>
-
-                {fitnessTrend.length >= 3 && (
-                  <ResponsiveContainer width="100%" height={180}>
-                    <LineChart data={fitnessTrend} margin={{ top: 8, right: 12, left: 0, bottom: 22 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis
-                        dataKey="week"
-                        tick={{ fontSize: 11, fill: "#64748b" }}
-                        tickFormatter={v => `W${v}`}
-                        label={{ value: "Training week", position: "insideBottom", offset: -8, fill: "#64748b", fontSize: 11 }}
-                      />
-                      <YAxis
-                        tick={{ fontSize: 11, fill: "#64748b" }}
-                        domain={["dataMin - 10", "dataMax + 10"]}
-                        tickFormatter={v => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, "0")}`}
-                        reversed
-                        width={50}
-                      />
-                      <Tooltip
-                        labelFormatter={(v) => `Training week ${v}`}
-                        formatter={(val, name, { payload }) => {
-                          if (name === "Goal") return [secToPaceStr(val), name];
-                          return [`${secToPaceStr(val)} @ ${payload.avgHr} bpm`, "Pace at Z2 HR"];
-                        }}
-                      />
-                      <Line type="monotone" dataKey="paceSec" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 4, fill: "#4f46e5" }} isAnimationActive={false} name="Pace at Z2 HR" />
-                      <Line type="monotone" dataKey={() => goalPaceSec} stroke="#10b981" strokeWidth={1.5} strokeDasharray="4 4" dot={false} isAnimationActive={false} name="Goal" />
-                    </LineChart>
-                  </ResponsiveContainer>
-                )}
               </div>
-            )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 items-end">
+                <div>
+                  <div className="text-xs text-slate-400 mb-1">Current</div>
+                  {fitnessSummary ? (
+                    <>
+                      <div className="text-3xl sm:text-4xl font-bold text-indigo-700">
+                        {secToPaceStr(fitnessSummary.latest.paceSec)} <span className="text-lg text-slate-400 font-normal">/km</span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        @ {fitnessSummary.latest.avgHr} bpm · {fitnessSummary.latest.runs} run{fitnessSummary.latest.runs === 1 ? "" : "s"} · {fitnessSummary.latest.km} km
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xl font-semibold text-slate-400">No data yet</div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        Sync WHOOP and log a 4–12 km run in Z2 HR to populate this.
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400 mb-1">
+                    {fitnessSummary?.baseline ? `vs W${fitnessSummary.baseline.week}` : "Change"}
+                  </div>
+                  {fitnessSummary && fitnessSummary.deltaSec !== null ? (
+                    <>
+                      <div className={`text-2xl font-bold ${fitnessSummary.deltaSec < -1 ? "text-emerald-600" : fitnessSummary.deltaSec > 1 ? "text-amber-600" : "text-slate-500"}`}>
+                        {fitnessSummary.deltaSec < 0 ? "▼" : fitnessSummary.deltaSec > 0 ? "▲" : "="} {Math.abs(Math.round(fitnessSummary.deltaSec))} s/km
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        {fitnessSummary.deltaSec < -1 ? "faster at same effort" :
+                         fitnessSummary.deltaSec > 1 ? "slower at same effort" :
+                         "holding steady"}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-slate-400">—</div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400 mb-1">Goal pace</div>
+                  {editingGoal ? (
+                    <form onSubmit={(e) => { e.preventDefault(); submitGoalEdit(); }} className="flex items-center gap-2">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={goalDraft}
+                        onChange={(e) => setGoalDraft(e.target.value)}
+                        onBlur={submitGoalEdit}
+                        placeholder="6:45"
+                        className="w-20 border border-slate-200 rounded-md px-2 py-1 text-2xl font-bold focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                      />
+                      <span className="text-xs text-slate-400">m:ss /km</span>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => { setGoalDraft(secToPaceStr(goalPaceSec)); setEditingGoal(true); }}
+                      className="text-left text-2xl font-bold text-slate-700 hover:text-indigo-600 transition group cursor-pointer"
+                      title="Click to edit goal pace"
+                    >
+                      {secToPaceStr(goalPaceSec)} <span className="text-base text-slate-400 font-normal">/km</span>
+                      <span className="text-sm text-indigo-400 ml-1.5">✎</span>
+                    </button>
+                  )}
+                  <div className="text-xs text-slate-500 mt-1">
+                    = {secToTimeStr(goalMarathonSec)} marathon · click to edit
+                  </div>
+                </div>
+              </div>
+
+              {fitnessTrend.length >= 3 ? (
+                <ResponsiveContainer width="100%" height={180}>
+                  <LineChart data={fitnessTrend} margin={{ top: 8, right: 12, left: 0, bottom: 22 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis
+                      dataKey="week"
+                      tick={{ fontSize: 11, fill: "#64748b" }}
+                      tickFormatter={v => `W${v}`}
+                      label={{ value: "Training week", position: "insideBottom", offset: -8, fill: "#64748b", fontSize: 11 }}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: "#64748b" }}
+                      domain={["dataMin - 10", "dataMax + 10"]}
+                      tickFormatter={v => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, "0")}`}
+                      reversed
+                      width={50}
+                    />
+                    <Tooltip
+                      labelFormatter={(v) => `Training week ${v}`}
+                      formatter={(val, name, { payload }) => {
+                        if (name === "Goal") return [secToPaceStr(val), name];
+                        return [`${secToPaceStr(val)} @ ${payload.avgHr} bpm`, "Pace at Z2 HR"];
+                      }}
+                    />
+                    <Line type="monotone" dataKey="paceSec" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 4, fill: "#4f46e5" }} isAnimationActive={false} name="Pace at Z2 HR" />
+                    <Line type="monotone" dataKey={() => goalPaceSec} stroke="#10b981" strokeWidth={1.5} strokeDasharray="4 4" dot={false} isAnimationActive={false} name="Goal" />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="border border-dashed border-slate-200 rounded-lg p-6 text-center text-sm text-slate-400">
+                  Trend appears after 3 weeks of logged Z2 runs in the 4–12 km range.
+                </div>
+              )}
+            </div>
 
             <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
               <h3 className="text-sm font-semibold text-slate-700 mb-4">Weekly Volume vs Plan</h3>
