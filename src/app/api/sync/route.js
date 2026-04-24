@@ -157,7 +157,7 @@ async function runSync(bodyToken = null) {
     const { activities } = await fetchActivities(accessToken, startDate, endDate);
     console.log(`[sync] Fetched ${activities.length} activities`);
 
-    const { weeklyData, weeklyActuals } = processActivities(activities);
+    const { weeklyData, weeklyActuals, dailyActualDetails } = processActivities(activities);
     console.log(`[sync] Processed ${weeklyData.length} weeks with data`);
 
     const syncedAt = new Date().toISOString();
@@ -170,7 +170,7 @@ async function runSync(bodyToken = null) {
 
     // Persist to Vercel Blob so /api/activities can read it
     try {
-      await storeActivities({ weeklyData, weeklyActuals, activities });
+      await storeActivities({ weeklyData, weeklyActuals, dailyActualDetails, activities });
       await storeSyncMeta({ syncedAt, activitiesCount: activities.length, breakdown });
       console.log("[sync] Persisted data to blob storage");
     } catch (e) {
@@ -185,6 +185,7 @@ async function runSync(bodyToken = null) {
       breakdown,
       weeklyData,
       weeklyActuals,
+      dailyActualDetails,
       activities,
     }));
   } catch (error) {

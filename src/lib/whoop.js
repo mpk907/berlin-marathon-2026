@@ -199,7 +199,7 @@ export async function fetchActivities(accessToken, startDate, endDate) {
 
 /**
  * Process raw activities into weekly summaries for the dashboard.
- * Returns { weeklyData, weeklyActuals } matching data.js format.
+ * Returns { weeklyData, weeklyActuals, dailyActualDetails } matching data.js format.
  */
 export function processActivities(activities) {
   const WEEK1_START = new Date("2026-01-05T00:00:00Z");
@@ -237,6 +237,7 @@ export function processActivities(activities) {
   // Build weekly summaries
   const weeklyData = [];
   const weeklyActuals = {};
+  const dailyActualDetails = {};
   const dayKeys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
   for (let wk = 1; wk <= 38; wk++) {
@@ -303,22 +304,38 @@ export function processActivities(activities) {
     });
 
     const dayMap = {};
+    const dayDetailMap = {};
     for (const act of acts) {
       const dow = dayKeys[new Date(act.date).getUTCDay()];
       if (!dayMap[dow]) dayMap[dow] = [];
+      if (!dayDetailMap[dow]) dayDetailMap[dow] = [];
       const emoji = act.type === "Run" ? "🏃" : act.type === "Football" ? "⚽" : act.type === "Spin" ? "🚴" : "💪";
       if (act.distance > 0.5) {
         dayMap[dow].push(`${emoji}${act.distance.toFixed(1)}`);
       } else {
         dayMap[dow].push(`${emoji}${Math.round(act.duration)}min`);
       }
+      // Per-session detail with km-equivalent for non-run activities
+      let kmEquiv = null;
+      if (act.type === "Football") kmEquiv = Math.round(act.duration * 0.11 * 10) / 10;
+      else if (act.type === "Spin") kmEquiv = Math.round((act.distance > 0 ? act.distance : act.duration * 0.25) * 10) / 10;
+      dayDetailMap[dow].push({
+        type: act.type,
+        distance: act.distance || 0,
+        duration: act.duration || 0,
+        pace: act.pace || null,
+        avgHr: act.avgHr || null,
+        z2: act.z2 || 0,
+        kmEquiv,
+      });
     }
     const dayActuals = {};
     for (const [dow, items] of Object.entries(dayMap)) {
       dayActuals[dow] = items.join("\n");
     }
     weeklyActuals[wk] = dayActuals;
+    dailyActualDetails[wk] = dayDetailMap;
   }
 
-  return { weeklyData, weeklyActuals };
+  return { weeklyData, weeklyActuals, dailyActualDetails };
 }

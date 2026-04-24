@@ -7,7 +7,16 @@ import {
   hrZones as staticHrZones,
   trainingPlan as staticTrainingPlan,
   weeklyActuals as staticWeeklyActuals,
+  dailyActualDetails as staticDailyActualDetails,
 } from "@/lib/data";
+import {
+  computeCurrentProjection,
+  computeProjectionTrend,
+  secToPaceStr,
+  secToTimeStr,
+  TARGET_MARATHON_SEC,
+  TARGET_PACE_SEC,
+} from "@/lib/projection";
 
 const KPI = ({ label, value, sub, color = "text-slate-800" }) => (
   <div className="bg-white rounded-xl p-3 sm:p-5 shadow-sm border border-slate-100">
@@ -23,7 +32,15 @@ const StatusBadge = ({ pct }) => {
   return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Off Track</span>;
 };
 
-const DayCell = ({ planned, actual, isPast, isFuture, detail }) => {
+const DayCell = ({ planned, actual, isFuture, detail }) => {
+  // Always prioritize actuals — if an activity was recorded, show it regardless of past/future
+  if (actual) {
+    return (
+      <div className="text-xs py-1 px-1 rounded bg-emerald-50 text-emerald-700 font-medium whitespace-pre-line">
+        {actual}
+      </div>
+    );
+  }
   if (isFuture) {
     const hasSession = planned && planned !== "Rest" && !planned.includes("✈️");
     return (
@@ -37,16 +54,6 @@ const DayCell = ({ planned, actual, isPast, isFuture, detail }) => {
         )}
       </div>
     );
-  }
-  if (isPast && actual) {
-    return (
-      <div className="text-xs py-1 px-1 rounded bg-emerald-50 text-emerald-700 font-medium whitespace-pre-line">
-        {actual}
-      </div>
-    );
-  }
-  if (isPast) {
-    return <div className="text-xs py-1 px-1 text-slate-300">—</div>;
   }
   return <div className="text-xs py-1 px-1 text-slate-300">—</div>;
 };
@@ -85,6 +92,7 @@ export default function Dashboard() {
   const [weeklyData, setWeeklyData] = useState(staticWeeklyData);
   const [trainingPlan, setTrainingPlan] = useState(staticTrainingPlan);
   const [weeklyActuals, setWeeklyActuals] = useState(staticWeeklyActuals);
+  const [dailyActualDetails, setDailyActualDetails] = useState(staticDailyActualDetails);
   const [hrZones, setHrZones] = useState(staticHrZones);
   const [dataSource, setDataSource] = useState("static");
   const [planSource, setPlanSource] = useState("default");
@@ -96,6 +104,7 @@ export default function Dashboard() {
   const [tokenValue, setTokenValue] = useState("");
   const [undoState, setUndoState] = useState(null); // { plan, timeout } for undo toast
   const [selectedSession, setSelectedSession] = useState(null); // { weekNum, day } — tap-to-swap on mobile
+  const [dismissedDoneEarly, setDismissedDoneEarly] = useState(false);
 
   // ═══ REPLAN STATE ═══
   const [showReplan, setShowReplan] = useState(false);
@@ -126,6 +135,7 @@ export default function Dashboard() {
           setSyncedAt(data.syncedAt);
         }
         if (data && data.weeklyActuals) setWeeklyActuals(data.weeklyActuals);
+        if (data && data.dailyActualDetails) setDailyActualDetails(data.dailyActualDetails);
         if (data && data.trainingPlan) setTrainingPlan(data.trainingPlan);
         if (data && data.planSource) setPlanSource(data.planSource);
         if (data && data.planUpdatedAt) setPlanUpdatedAt(data.planUpdatedAt);
@@ -145,6 +155,7 @@ export default function Dashboard() {
                 const merged = result.weeklyData.map(w => ({ ...w, plan: planMap[w.week] || 0 }));
                 setWeeklyData(merged);
                 setWeeklyActuals(result.weeklyActuals || {});
+                if (result.dailyActualDetails) setDailyActualDetails(result.dailyActualDetails);
                 setDataSource("whoop");
                 setSyncedAt(result.syncedAt);
                 console.log(`[dashboard] Background sync complete: ${result.activitiesCount} activities`);
@@ -175,6 +186,7 @@ export default function Dashboard() {
           const merged = result.weeklyData.map(w => ({ ...w, plan: planMap[w.week] || 0 }));
           setWeeklyData(merged);
           setWeeklyActuals(result.weeklyActuals || staticWeeklyActuals);
+          setDailyActualDetails(result.dailyActualDetails || staticDailyActualDetails);
           setDataSource("whoop");
           setSyncedAt(result.syncedAt);
         }
@@ -641,6 +653,95 @@ export default function Dashboard() {
     return null;
   }, [trainingPlan, weeklyActuals]);
 
+  // ═══ DONE-EARLY DETECTION — did the user do today's planned session yesterday? ═══
+  // Fires when today's planned run matches yesterday's actual closely AND yesterday was
+  // supposed to be rest or a much lighter day. Offers to swap the two days in the plan.
+  const doneEarly = useMemo(() => {
+    if (!nextTraining || nextTraining.when !== "Today" || nextTraining.completedToday) return null;
+    if (dismissedDoneEarly) return null;
+
+    const plannedKm = parseFloat(nextTraining.session.match(/^(\d+\.?\d*)/)?.[1]);
+    if (!plannedKm || plannedKm < 2) return null;
+
+    const dayKeys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    const dayLabels = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const week1Start = new Date(2026, 0, 5);
+    const yDaysSinceW1 = Math.floor((yesterday - week1Start) / 86400000);
+    const yWeek = Math.floor(yDaysSinceW1 / 7) + 1;
+    // Only handle same-week for now — cross-week swap needs a different mechanism
+    if (yWeek !== nextTraining.week) return null;
+
+    const yDayKey = dayKeys[yesterday.getDay()];
+    const yDayLabel = dayLabels[yesterday.getDay()];
+    const todayDayKey = dayKeys[now.getDay()];
+
+    const yWeekPlan = trainingPlan.find(w => w.week === yWeek);
+    if (!yWeekPlan) return null;
+    const yPlannedStr = yWeekPlan[yDayKey];
+    const yPlannedKm = yPlannedStr && yPlannedStr !== "Rest" && !yPlannedStr.includes("✈️")
+      ? parseFloat(yPlannedStr.match(/^(\d+\.?\d*)/)?.[1] || 0)
+      : 0;
+
+    // Only prompt if yesterday was Rest or notably lighter than today's planned
+    if (yPlannedKm > plannedKm * 0.6) return null;
+
+    // Find a run among yesterday's actuals close to today's planned distance
+    const sessions = dailyActualDetails[yWeek]?.[yDayKey];
+    const actualStr = weeklyActuals[yWeek]?.[yDayKey];
+    let matchDistance = null;
+    if (sessions && sessions.length > 0) {
+      const m = sessions.find(s => s.type === "Run" && s.distance > 0.5 &&
+        Math.abs(s.distance - plannedKm) / plannedKm < 0.25);
+      if (m) matchDistance = m.distance;
+    }
+    if (matchDistance === null && actualStr) {
+      const runMatch = actualStr.match(/🏃(\d+\.?\d*)/);
+      if (runMatch) {
+        const dist = parseFloat(runMatch[1]);
+        if (Math.abs(dist - plannedKm) / plannedKm < 0.25) matchDistance = dist;
+      }
+    }
+    if (matchDistance === null) return null;
+
+    return {
+      week: yWeek,
+      yesterdayDayKey: yDayKey,
+      yesterdayDayLabel: yDayLabel,
+      todayDayKey,
+      matchDistance,
+      plannedKm,
+      plannedSession: nextTraining.session,
+    };
+  }, [nextTraining, trainingPlan, weeklyActuals, dailyActualDetails, dismissedDoneEarly]);
+
+  const confirmDoneEarly = useCallback(() => {
+    if (!doneEarly) return;
+    swapSessions(doneEarly.week, doneEarly.yesterdayDayKey, doneEarly.todayDayKey);
+    setDismissedDoneEarly(true);
+  }, [doneEarly, swapSessions]);
+
+  const dismissDoneEarlyPrompt = useCallback(() => {
+    setDismissedDoneEarly(true);
+  }, []);
+
+  // ═══ RACE PROJECTION — estimate marathon time from actual runs ═══
+  const projection = useMemo(() => {
+    return computeCurrentProjection(dailyActualDetails, weeklyData, currentWeek);
+  }, [dailyActualDetails, weeklyData, currentWeek]);
+
+  const projectionTrend = useMemo(() => {
+    const maxWk = Math.max(currentWeek, ...weeklyData.map(w => w.week || 0));
+    const trend = computeProjectionTrend(dailyActualDetails, weeklyData, maxWk);
+    const targetMin = Math.round(TARGET_MARATHON_SEC / 60);
+    return trend
+      .filter(t => t.marathonMin !== null)
+      .map(t => ({ week: t.week, projection: t.marathonMin, target: targetMin }));
+  }, [dailyActualDetails, weeklyData, currentWeek]);
+
   const filteredPlan = useMemo(() => {
     if (planView === "upcoming") return trainingPlan.filter(w => w.week >= currentWeek - 1 && w.week <= currentWeek + 5);
     if (planView === "past") return trainingPlan.filter(w => w.week <= currentWeek);
@@ -826,6 +927,32 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ═══ DONE-EARLY PROMPT — offer to swap today↔yesterday if planned matches yesterday's actual ═══ */}
+      {doneEarly && (
+        <div className="px-4 sm:px-8 -mt-2 mb-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start sm:items-center gap-3 flex-col sm:flex-row">
+            <div className="flex-1 text-sm text-amber-900">
+              <span className="font-semibold">Schon {doneEarly.yesterdayDayLabel} erledigt?</span>{" "}
+              Deine {doneEarly.matchDistance.toFixed(1)} km gestern passen zum heutigen Plan ({doneEarly.plannedKm} km). Soll ich die Tage im Plan tauschen?
+            </div>
+            <div className="flex gap-2 self-end sm:self-auto">
+              <button
+                onClick={dismissDoneEarlyPrompt}
+                className="text-xs font-medium text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-100"
+              >
+                Ignorieren
+              </button>
+              <button
+                onClick={confirmDoneEarly}
+                className="text-xs font-semibold bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700"
+              >
+                Ja, verschieben
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* KPI Strip */}
       <div className="px-4 sm:px-8">
         <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-4 lg:grid-cols-6">
@@ -856,6 +983,89 @@ export default function Dashboard() {
         {/* ═══ OVERVIEW ═══ */}
         {activeTab === "overview" && (
           <div className="space-y-6">
+            {/* Race Projection card */}
+            {projection && (
+              <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-xl p-6 shadow-lg text-white">
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div>
+                    <div className="text-xs font-medium text-indigo-200 uppercase tracking-wider mb-1">Race Projection</div>
+                    <div className="text-xs text-indigo-200">Berlin · 28 Sep 2026</div>
+                  </div>
+                  <div className="text-xs bg-white/10 px-2 py-1 rounded-md text-indigo-100">
+                    {projection.method === "z2-pace" ? "Z2 pace" :
+                     projection.method === "avg-pace" ? "avg pace" : "weekly avg"}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+                  <div>
+                    <div className="text-indigo-200 text-xs mb-1">Projected finish</div>
+                    <div className="text-4xl sm:text-5xl font-bold tracking-tight">{secToTimeStr(projection.marathonSec)}</div>
+                    <div className="text-indigo-200 text-sm mt-1">@ {secToPaceStr(projection.racePaceSec)} /km</div>
+                  </div>
+                  <div>
+                    <div className="text-indigo-200 text-xs mb-1">Plan goal</div>
+                    <div className="text-xl font-semibold">{secToTimeStr(TARGET_MARATHON_SEC)}</div>
+                    <div className="text-indigo-200 text-sm mt-1">@ {secToPaceStr(TARGET_PACE_SEC)} /km</div>
+                    {(() => {
+                      const deltaSec = projection.marathonSec - TARGET_MARATHON_SEC;
+                      const deltaMin = Math.round(Math.abs(deltaSec) / 60);
+                      const ahead = deltaSec < 0;
+                      return (
+                        <div className={`text-sm font-semibold mt-2 ${ahead ? "text-emerald-300" : "text-amber-300"}`}>
+                          {ahead ? "▼" : "▲"} {deltaMin} min {ahead ? "ahead of" : "behind"} goal
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <div>
+                    <div className="text-indigo-200 text-xs mb-1">Based on</div>
+                    <div className="text-lg font-medium">{projection.basedOnRuns} run{projection.basedOnRuns === 1 ? "" : "s"}</div>
+                    <div className="text-indigo-200 text-sm">{projection.basedOnKm} km · last 4 weeks</div>
+                    {projection.avgHr && (
+                      <div className="text-indigo-200 text-sm mt-1">avg HR {projection.avgHr}</div>
+                    )}
+                  </div>
+                </div>
+                {projectionTrend.length >= 3 && (
+                  <div className="mt-4 pt-4 border-t border-white/10">
+                    <div className="text-xs text-indigo-200 mb-2">Trend (3-week rolling)</div>
+                    <ResponsiveContainer width="100%" height={90}>
+                      <LineChart data={projectionTrend}>
+                        <XAxis dataKey="week" tick={{ fontSize: 10, fill: "#c7d2fe" }} axisLine={false} tickLine={false} />
+                        <YAxis
+                          tick={{ fontSize: 10, fill: "#c7d2fe" }}
+                          axisLine={false}
+                          tickLine={false}
+                          domain={["dataMin - 10", "dataMax + 10"]}
+                          tickFormatter={v => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, "0")}`}
+                          reversed
+                          width={40}
+                        />
+                        <Tooltip
+                          contentStyle={{ background: "#312e81", border: "none", borderRadius: 8, fontSize: 12 }}
+                          labelStyle={{ color: "#c7d2fe" }}
+                          formatter={(val, name) => {
+                            const h = Math.floor(val / 60);
+                            const m = val % 60;
+                            return [`${h}:${String(m).padStart(2, "0")}`, name === "projection" ? "Projection" : "Goal"];
+                          }}
+                        />
+                        <Line type="monotone" dataKey="projection" stroke="#fde68a" strokeWidth={2.5} dot={{ r: 3, fill: "#fde68a" }} isAnimationActive={false} />
+                        <Line type="monotone" dataKey="target" stroke="#86efac" strokeWidth={1.5} strokeDasharray="4 4" dot={false} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+                <div className="text-xs text-indigo-200 mt-3">
+                  {projection.method === "z2-pace"
+                    ? "Z2 pace − 30 s/km race-effort buffer × 42.195 km."
+                    : projection.method === "avg-pace"
+                    ? "Average run pace − 45 s/km race-effort buffer × 42.195 km. Sync more Z2 runs for a tighter estimate."
+                    : "Weekly average pace − 45 s/km buffer. Sync per-session details for a tighter estimate."}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
               <h3 className="text-sm font-semibold text-slate-700 mb-4">Weekly Volume vs Plan</h3>
               <ResponsiveContainer width="100%" height={320}>
@@ -1045,6 +1255,7 @@ export default function Dashboard() {
                       const isCurrent = w.week === currentWeek;
                       const isFutureWeek = w.week > currentWeek;
                       const actuals = weeklyActuals[w.week] || {};
+                      const dayDetails = dailyActualDetails[w.week] || {};
                       const weekData = weeklyData.find(wd => wd.week === w.week);
                       const actualTotal = weekData ? (weekData.run || 0) + (weekData.football || 0) + (weekData.spin || 0) : null;
                       // For current week: compare against planned km for days up to today only
@@ -1099,16 +1310,13 @@ export default function Dashboard() {
                               )}
                             </td>
                             {days.map((d, dayIdx) => {
-                              // Per-day past/future: past weeks are all past, future weeks all future
-                              // Current week: days up to today are past, days after today are future
-                              let dayIsPast, dayIsFuture;
+                              // Per-day future: future weeks all future; current week — days after today are future
+                              let dayIsFuture;
                               if (isPastWeek) {
-                                dayIsPast = true; dayIsFuture = false;
+                                dayIsFuture = false;
                               } else if (isFutureWeek) {
-                                dayIsPast = false; dayIsFuture = true;
+                                dayIsFuture = true;
                               } else {
-                                // Current week — compare day index
-                                dayIsPast = dayIdx <= todayDayIdx;
                                 dayIsFuture = dayIdx > todayDayIdx;
                               }
 
@@ -1163,7 +1371,6 @@ export default function Dashboard() {
                                   <DayCell
                                     planned={w[d]}
                                     actual={actuals[d]}
-                                    isPast={dayIsPast}
                                     isFuture={dayIsFuture}
                                     detail={dayIsFuture ? detail[d] : null}
                                   />
@@ -1174,46 +1381,140 @@ export default function Dashboard() {
                               <div className="flex items-center gap-2">
                                 {w.notes && <span className="text-xs text-slate-500">{w.notes}</span>}
                                 {(isPastWeek || isCurrent) && pct !== null && <StatusBadge pct={pct} />}
-                                {w.detail && <span className="text-xs text-blue-400">{isExpanded ? "▼" : "▶"}</span>}
+                                {(w.detail || Object.keys(actuals).length > 0 || Object.keys(dayDetails).length > 0) && <span className="text-xs text-blue-400">{isExpanded ? "▼" : "▶"}</span>}
                               </div>
                             </td>
                           </tr>
-                          {/* Expanded detail row showing HR/pace guidance */}
-                          {isExpanded && w.detail && (
+                          {/* Expanded detail row — actuals for past/current days, planned for future days */}
+                          {isExpanded && (w.detail || Object.keys(actuals).length > 0 || Object.keys(dayDetails).length > 0) && (
                             <tr className="bg-slate-50">
                               <td colSpan={11} className="px-6 py-3">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                  {Object.entries(w.detail).map(([day, d]) => (
-                                    <div key={day} className="bg-white rounded-lg p-3 border border-slate-200">
-                                      <div className="flex items-center justify-between mb-1">
-                                        <span className="font-semibold text-sm text-slate-700 capitalize">{day}</span>
-                                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                          d.type === "easy" ? "bg-green-100 text-green-700" :
-                                          d.type === "long" || d.type === "long easy" ? "bg-blue-100 text-blue-700" :
-                                          d.type === "tempo" ? "bg-orange-100 text-orange-700" :
-                                          d.type === "intervals" || d.type === "MP intervals" ? "bg-red-100 text-red-700" :
-                                          d.type === "quality" || d.type === "MP continuous" ? "bg-purple-100 text-purple-700" :
-                                          d.type === "shakeout" || d.type === "recovery" ? "bg-gray-100 text-gray-600" :
-                                          d.type === "football" ? "bg-orange-100 text-orange-700" :
-                                          d.type === "RACE" ? "bg-yellow-100 text-yellow-800 font-bold" :
-                                          "bg-slate-100 text-slate-600"
-                                        }`}>{d.type}</span>
-                                      </div>
-                                      {d.km > 0 && <div className="text-lg font-bold text-slate-800">{d.km} km</div>}
-                                      {d.hr && (
-                                        <div className="flex items-center gap-1 mt-1">
-                                          <span className="text-xs text-red-400">♥</span>
-                                          <span className="text-xs text-slate-600">{d.hr}</span>
+                                  {days.map((dayKey, dayIdx) => {
+                                    const sessions = dayDetails[dayKey] || null;
+                                    const actualStr = actuals[dayKey];
+                                    const plannedDetail = w.detail?.[dayKey];
+                                    let isDayFuture;
+                                    if (isPastWeek) isDayFuture = false;
+                                    else if (isFutureWeek) isDayFuture = true;
+                                    else isDayFuture = dayIdx > todayDayIdx;
+
+                                    // Prioritize actual: show rich per-session card if we have structured detail
+                                    if (sessions && sessions.length > 0) {
+                                      const totalKm = sessions.reduce((s, x) => s + (x.distance > 0.5 ? x.distance : 0), 0);
+                                      const totalEquiv = sessions.reduce((s, x) => s + (x.kmEquiv || 0), 0);
+                                      return (
+                                        <div key={dayKey} className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+                                          <div className="flex items-center justify-between mb-1.5">
+                                            <span className="font-semibold text-sm text-emerald-800 capitalize">{dayKey}</span>
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">actual</span>
+                                          </div>
+                                          <div className="space-y-1.5">
+                                            {sessions.map((s, i) => {
+                                              const emoji = s.type === "Run" ? "🏃" : s.type === "Football" ? "⚽" : s.type === "Spin" ? "🚴" : "💪";
+                                              const mainLabel = s.distance > 0.5
+                                                ? `${s.distance.toFixed(1)} km`
+                                                : `${Math.round(s.duration)} min`;
+                                              const showEquiv = s.kmEquiv && s.type !== "Run" && (s.distance <= 0.5 || s.type === "Football");
+                                              return (
+                                                <div key={i} className="text-xs">
+                                                  <div className="font-bold text-emerald-900">
+                                                    <span className="mr-1">{emoji}</span>{mainLabel}
+                                                    {showEquiv && <span className="text-emerald-600 font-normal ml-1">≈{s.kmEquiv}km run-equiv</span>}
+                                                  </div>
+                                                  <div className="flex items-center gap-3 text-slate-600 mt-0.5">
+                                                    {s.avgHr ? <span><span className="text-red-400">♥</span> {s.avgHr}</span> : null}
+                                                    {s.pace ? <span><span className="text-blue-400">⏱</span> {s.pace}/km</span> : null}
+                                                    {!s.avgHr && !s.pace && s.duration > 0 ? <span className="text-slate-400">{Math.round(s.duration)} min</span> : null}
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                          {(totalKm > 0 || totalEquiv > 0) && sessions.length > 1 && (
+                                            <div className="mt-1.5 pt-1.5 border-t border-emerald-100 text-xs text-emerald-700 font-medium">
+                                              total: {(totalKm + totalEquiv).toFixed(1)} km
+                                            </div>
+                                          )}
+                                          {plannedDetail && (
+                                            <div className="mt-1.5 pt-1.5 border-t border-emerald-100 text-xs text-slate-400">
+                                              <span className="line-through">plan: {plannedDetail.km > 0 ? `${plannedDetail.km}km ` : ""}{plannedDetail.type}</span>
+                                            </div>
+                                          )}
                                         </div>
-                                      )}
-                                      {d.pace && (
-                                        <div className="flex items-center gap-1 mt-0.5">
-                                          <span className="text-xs text-blue-400">⏱</span>
-                                          <span className="text-xs text-slate-600">{d.pace}</span>
+                                      );
+                                    }
+
+                                    // Fallback: raw actual string (static data without structured detail)
+                                    if (actualStr) {
+                                      return (
+                                        <div key={dayKey} className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <span className="font-semibold text-sm text-emerald-800 capitalize">{dayKey}</span>
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">actual</span>
+                                          </div>
+                                          <div className="text-sm font-bold text-emerald-900 whitespace-pre-line">{actualStr}</div>
+                                          {plannedDetail && (
+                                            <div className="mt-1.5 pt-1.5 border-t border-emerald-100 text-xs text-slate-400">
+                                              <span className="line-through">plan: {plannedDetail.km > 0 ? `${plannedDetail.km}km ` : ""}{plannedDetail.type}</span>
+                                            </div>
+                                          )}
                                         </div>
-                                      )}
-                                    </div>
-                                  ))}
+                                      );
+                                    }
+
+                                    // No actual — show planned only for future days
+                                    if (isDayFuture && plannedDetail) {
+                                      return (
+                                        <div key={dayKey} className="bg-white rounded-lg p-3 border border-slate-200">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <span className="font-semibold text-sm text-slate-700 capitalize">{dayKey}</span>
+                                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                              plannedDetail.type === "easy" ? "bg-green-100 text-green-700" :
+                                              plannedDetail.type === "long" || plannedDetail.type === "long easy" ? "bg-blue-100 text-blue-700" :
+                                              plannedDetail.type === "tempo" ? "bg-orange-100 text-orange-700" :
+                                              plannedDetail.type === "intervals" || plannedDetail.type === "MP intervals" ? "bg-red-100 text-red-700" :
+                                              plannedDetail.type === "quality" || plannedDetail.type === "MP continuous" ? "bg-purple-100 text-purple-700" :
+                                              plannedDetail.type === "shakeout" || plannedDetail.type === "recovery" ? "bg-gray-100 text-gray-600" :
+                                              plannedDetail.type === "football" ? "bg-orange-100 text-orange-700" :
+                                              plannedDetail.type === "RACE" ? "bg-yellow-100 text-yellow-800 font-bold" :
+                                              "bg-slate-100 text-slate-600"
+                                            }`}>{plannedDetail.type}</span>
+                                          </div>
+                                          {plannedDetail.km > 0 && <div className="text-lg font-bold text-slate-800">{plannedDetail.km} km</div>}
+                                          {plannedDetail.hr && (
+                                            <div className="flex items-center gap-1 mt-1">
+                                              <span className="text-xs text-red-400">♥</span>
+                                              <span className="text-xs text-slate-600">{plannedDetail.hr}</span>
+                                            </div>
+                                          )}
+                                          {plannedDetail.pace && (
+                                            <div className="flex items-center gap-1 mt-0.5">
+                                              <span className="text-xs text-blue-400">⏱</span>
+                                              <span className="text-xs text-slate-600">{plannedDetail.pace}</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+
+                                    // Past day without actual → show a muted "missed" card
+                                    if (!isDayFuture && plannedDetail) {
+                                      return (
+                                        <div key={dayKey} className="bg-white rounded-lg p-3 border border-dashed border-slate-200 opacity-60">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <span className="font-semibold text-sm text-slate-400 capitalize">{dayKey}</span>
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">missed</span>
+                                          </div>
+                                          <div className="text-xs text-slate-400 line-through">
+                                            {plannedDetail.km > 0 ? `${plannedDetail.km}km ` : ""}{plannedDetail.type}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
+                                    return null;
+                                  })}
                                 </div>
                               </td>
                             </tr>
