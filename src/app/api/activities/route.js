@@ -95,11 +95,12 @@ export async function GET() {
  * This ensures the dashboard always shows data up to today.
  */
 function mergeWithPlan(weeklyData, plan) {
-  // Compute current week number
+  // Compute current week number (capped to plan's last week so post-race recovery weeks stay valid)
   const WEEK1_START = new Date("2026-01-05T00:00:00Z");
   const now = new Date();
   const diffDays = Math.floor((now - WEEK1_START) / 86400000);
-  const currentWeek = Math.max(1, Math.min(38, Math.floor(diffDays / 7) + 1));
+  const maxPlanWeek = plan.length > 0 ? Math.max(...plan.map(p => p.week)) : 38;
+  const currentWeek = Math.max(1, Math.min(maxPlanWeek, Math.floor(diffDays / 7) + 1));
 
   // Build lookup maps
   const planMap = {};

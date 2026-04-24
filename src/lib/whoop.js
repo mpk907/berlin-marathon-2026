@@ -211,7 +211,7 @@ export function processActivities(activities) {
     const diffDays = Math.floor((actDate - WEEK1_START) / 86400000);
     if (diffDays < 0) continue;
     const weekNum = Math.floor(diffDays / 7) + 1;
-    if (weekNum > 38) continue;
+    if (weekNum > 42) continue; // plan ends at week 42 (race + 4 recovery weeks)
     if (!weeks[weekNum]) weeks[weekNum] = [];
     weeks[weekNum].push(act);
   }
@@ -240,7 +240,7 @@ export function processActivities(activities) {
   const dailyActualDetails = {};
   const dayKeys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
-  for (let wk = 1; wk <= 38; wk++) {
+  for (let wk = 1; wk <= 42; wk++) {
     const acts = weeks[wk] || [];
     if (acts.length === 0) continue;
 
