@@ -20,14 +20,14 @@ const SPORT_ID_MAP = {
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 // Run-equivalent conversion factors (km per minute of activity).
-// Rooted in Daniels' rule of thumb: cross-training ≈ 0.5× running stress per
-// minute, high-impact sport with sprints ≈ equal. At ~7:30/km easy pace you
-// cover 0.133 km per minute of running, so:
-//   spin     = 0.5  × 0.133 ≈ 0.067  (60 min ≈ 4 km)
-//   football = 1.0  × 0.133 ≈ 0.133  (60 min ≈ 8 km)
-// Applied to duration only — ignoring actual distance on the bike, since
-// 30 km of pedalling is not equivalent to 30 km of running training stress.
-const SPIN_KM_PER_MIN = 0.067;
+// Calibrated for Peloton-style indoor cycling (mixed-intensity classes,
+// usually 70–85 % HRmax) and football (90 min match with sprints).
+// At ~7:30/km easy run pace you cover 0.133 km per minute of running.
+//   spin     = 0.1   → 60 min Peloton ≈ 6 km, 45 min class ≈ 4.5 km
+//   football = 0.133 → 60 min ≈ 8 km, 90 min ≈ 12 km
+// Applied to duration only — actual bike distance is ignored, since
+// 30 km of casual pedalling is not equivalent to 30 km of run training.
+const SPIN_KM_PER_MIN = 0.1;
 const FOOTBALL_KM_PER_MIN = 0.133;
 
 /**
