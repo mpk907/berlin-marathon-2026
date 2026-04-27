@@ -8,8 +8,9 @@
 // ═══════════════════════════════════════════
 
 const MARATHON_KM = 42.195;
-const Z2_HR_MIN = 125;
-const Z2_HR_MAX = 150;
+// Aligned with the WHOOP Z2 band shown in the training plan and Pace Guide.
+const Z2_HR_MIN = 127;
+const Z2_HR_MAX = 146;
 // Restrict the aerobic pace signal to short-to-mid runs.
 // Long runs are intentionally slower (fatigue, more time in fat-burn) and
 // would drag the projection the wrong way as training volume grows.
@@ -20,7 +21,6 @@ const RACE_PACE_ADJ_GENERAL = 45; // seconds/km faster than mixed-effort avg
 const DEFAULT_GOAL_PACE_SEC = 6 * 60 + 45; // 6:45/km
 
 export const DEFAULT_TARGET_PACE_SEC = DEFAULT_GOAL_PACE_SEC;
-export const DEFAULT_TARGET_MARATHON_SEC = DEFAULT_GOAL_PACE_SEC * MARATHON_KM;
 export function marathonTimeFromPaceSec(paceSec) {
   return paceSec * MARATHON_KM;
 }
@@ -135,51 +135,6 @@ export function computeCurrentProjection(dailyActualDetails, weeklyData, current
     basedOnKm: Math.round(totalKm * 10) / 10,
     method: "weekly-avg",
   };
-}
-
-/**
- * Per-week trend using a 3-week rolling window for smoothing.
- * Returns [{ week, marathonSec, racePaceSec, method }] for every week with enough data.
- */
-export function computeProjectionTrend(dailyActualDetails, weeklyData, maxWeek) {
-  const trend = [];
-  for (let wk = 1; wk <= maxWeek; wk++) {
-    const from = Math.max(1, wk - 2);
-    const structured = collectRunsInRange(dailyActualDetails || {}, from, wk);
-    let result = aggregateRuns(structured);
-    if (!result || result.basedOnKm < 5) {
-      // Fallback to weekly avg pace in the window
-      const window = (weeklyData || []).filter(w => w.week >= from && w.week <= wk && w.avgPace && w.run > 0);
-      if (window.length > 0) {
-        let totalKm = 0, totalSec = 0;
-        for (const w of window) {
-          const p = paceStrToSec(w.avgPace);
-          if (p === null) continue;
-          totalKm += w.run;
-          totalSec += p * w.run;
-        }
-        if (totalKm >= 5) {
-          const avg = totalSec / totalKm;
-          const race = avg - RACE_PACE_ADJ_GENERAL;
-          result = {
-            avgPaceSec: avg,
-            racePaceSec: race,
-            marathonSec: race * MARATHON_KM,
-            basedOnKm: totalKm,
-            method: "weekly-avg",
-          };
-        }
-      }
-    }
-    trend.push({
-      week: wk,
-      marathonSec: result?.marathonSec || null,
-      racePaceSec: result?.racePaceSec || null,
-      marathonMin: result?.marathonSec ? Math.round(result.marathonSec / 60) : null,
-      method: result?.method || null,
-    });
-  }
-  return trend;
 }
 
 /**

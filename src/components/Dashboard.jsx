@@ -148,6 +148,12 @@ export default function Dashboard() {
 
   // ═══ Dynamic current week from today's date ═══
   const maxPlanWeek = useMemo(() => trainingPlan.length > 0 ? Math.max(...trainingPlan.map(w => w.week)) : 38, [trainingPlan]);
+  // Race week = week containing the marathon race. Detected from the plan rather
+  // than hardcoded so adding/removing race-prep weeks doesn't break recovery logic.
+  const raceWeek = useMemo(() => {
+    const found = trainingPlan.find(w => typeof w.sun === "string" && w.sun.includes("RACE"));
+    return found?.week ?? 38;
+  }, [trainingPlan]);
   const currentWeek = useMemo(() => {
     const week1Start = new Date(2026, 0, 5); // Mon Jan 5 2026
     const now = new Date();
@@ -510,6 +516,8 @@ export default function Dashboard() {
   const doneEarly = useMemo(() => {
     if (!nextTraining || nextTraining.when !== "Today" || nextTraining.completedToday) return null;
     if (dismissedDoneEarly) return null;
+    // Skip during recovery — swapping a 4 km recovery jog has no upside.
+    if (currentWeek > raceWeek) return null;
 
     const plannedKm = parseFloat(nextTraining.session.match(/^(\d+\.?\d*)/)?.[1]);
     if (!plannedKm || plannedKm < 2) return null;
@@ -567,7 +575,7 @@ export default function Dashboard() {
       plannedKm,
       plannedSession: nextTraining.session,
     };
-  }, [nextTraining, trainingPlan, weeklyActuals, dailyActualDetails, dismissedDoneEarly]);
+  }, [nextTraining, trainingPlan, weeklyActuals, dailyActualDetails, dismissedDoneEarly, currentWeek, raceWeek]);
 
   const confirmDoneEarly = useCallback(() => {
     if (!doneEarly) return;
@@ -625,8 +633,8 @@ export default function Dashboard() {
             <h1 className="text-xl sm:text-2xl font-bold">Berlin Marathon 2026</h1>
             <p className="text-slate-400 text-sm mt-1">
               28 September 2026 ·{" "}
-              {currentWeek > 38
-                ? `Recovery week ${currentWeek - 38} of ${maxPlanWeek - 38}`
+              {currentWeek > raceWeek
+                ? `Recovery week ${currentWeek - raceWeek} of ${maxPlanWeek - raceWeek}`
                 : `${stats.weeksToRace} weeks to go`}
             </p>
           </div>
@@ -787,21 +795,21 @@ export default function Dashboard() {
         <div className="px-4 sm:px-8 -mt-2 mb-4">
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start sm:items-center gap-3 flex-col sm:flex-row">
             <div className="flex-1 text-sm text-amber-900">
-              <span className="font-semibold">Schon {doneEarly.yesterdayDayLabel} erledigt?</span>{" "}
-              Deine {doneEarly.matchDistance.toFixed(1)} km gestern passen zum heutigen Plan ({doneEarly.plannedKm} km). Soll ich die Tage im Plan tauschen?
+              <span className="font-semibold">Already done on {doneEarly.yesterdayDayLabel}?</span>{" "}
+              Yesterday&rsquo;s {doneEarly.matchDistance.toFixed(1)} km matches today&rsquo;s planned {doneEarly.plannedKm} km. Swap the two days in the plan?
             </div>
             <div className="flex gap-2 self-end sm:self-auto">
               <button
                 onClick={dismissDoneEarlyPrompt}
                 className="text-xs font-medium text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-100"
               >
-                Ignorieren
+                Dismiss
               </button>
               <button
                 onClick={confirmDoneEarly}
                 className="text-xs font-semibold bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700"
               >
-                Ja, verschieben
+                Swap days
               </button>
             </div>
           </div>
@@ -815,7 +823,7 @@ export default function Dashboard() {
           <KPI label="Last Week" value={`${stats.lastWeekKm.toFixed(1)} km`} sub={`Plan: ${stats.lastWeekPlan} km`} color={stats.lastWeekKm >= stats.lastWeekPlan * 0.8 ? "text-emerald-600" : "text-amber-600"} />
           <KPI label="Longest Run" value={`${stats.longestRun.toFixed(1)} km`} sub="Target: 32 km by Week 31" color={stats.longestRun >= 20 ? "text-emerald-600" : "text-amber-600"} />
           <KPI label="Consistency" value={`${stats.completed > 0 ? Math.round(stats.consistency / stats.completed * 100) : 0}%`} sub={`${stats.consistency}/${stats.completed} weeks > 5km`} color={stats.completed > 0 && stats.consistency / stats.completed >= 0.8 ? "text-emerald-600" : "text-amber-600"} />
-          <KPI label="Last Pace" value={stats.lastPace || "—"} sub="min/km · target race: 6:45" color="text-purple-600" />
+          <KPI label="Last Pace" value={stats.lastPace || "—"} sub={`min/km · target race: ${secToPaceStr(goalPaceSec)}`} color="text-purple-600" />
           <KPI label="Plan Adherence" value={`${stats.totalPlan > 0 ? Math.round(stats.totalAll / stats.totalPlan * 100) : 0}%`} sub={`${stats.totalAll.toFixed(0)} / ${stats.totalPlan} km`} color={stats.totalPlan > 0 && stats.totalAll / stats.totalPlan >= 0.7 ? "text-emerald-600" : "text-red-600"} />
         </div>
       </div>
@@ -844,7 +852,7 @@ export default function Dashboard() {
                 <div>
                   <h3 className="text-sm font-semibold text-slate-700">Aerobic Fitness</h3>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Pace at Z2 HR (125–150 bpm) on 4–12 km runs — lower is fitter. Long runs excluded.
+                    Pace at Z2 HR (127–146 bpm) on 4–12 km runs — lower is fitter. Long runs excluded.
                   </p>
                 </div>
                 <div className="text-xs bg-slate-100 px-2 py-1 rounded-md text-slate-600">
@@ -980,7 +988,7 @@ export default function Dashboard() {
               {/* Pace Progression */}
               <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                 <h3 className="text-sm font-semibold text-slate-700 mb-1">Pace Progression</h3>
-                <p className="text-xs text-slate-400 mb-4">Avg run pace per week (lower = faster). Race target: 6:45/km.</p>
+                <p className="text-xs text-slate-400 mb-4">Avg run pace per week (lower = faster). Race target: {secToPaceStr(goalPaceSec)}/km.</p>
                 <ResponsiveContainer width="100%" height={260}>
                   <ComposedChart data={paceData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -988,8 +996,8 @@ export default function Dashboard() {
                     <YAxis tick={{ fontSize: 11 }} domain={[6, 9]} reversed tickFormatter={v => `${Math.floor(v)}:${String(Math.round((v % 1) * 60)).padStart(2, "0")}`} />
                     <Tooltip formatter={(val) => [`${Math.floor(val)}:${String(Math.round((val % 1) * 60)).padStart(2, "0")} /km`]} />
                     <Area type="monotone" dataKey="pace" fill="#F3E5F5" stroke="#7B1FA2" strokeWidth={2.5} dot={{ r: 4, fill: "#7B1FA2" }} name="Avg Pace" />
-                    {/* Race target line at 6:45 = 6.75 */}
-                    <Line type="monotone" dataKey={() => 6.75} stroke="#AB47BC" strokeWidth={1.5} strokeDasharray="4 4" dot={false} name="Race Target 6:45" />
+                    {/* Race target line driven by the editable goal pace (sec → minutes for the chart's domain) */}
+                    <Line type="monotone" dataKey={() => goalPaceSec / 60} stroke="#AB47BC" strokeWidth={1.5} strokeDasharray="4 4" dot={false} name={`Race Target ${secToPaceStr(goalPaceSec)}`} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -1349,7 +1357,7 @@ export default function Dashboard() {
                     <div className="flex justify-between"><span className="text-green-600 font-medium">Recovery</span><span className="text-slate-600">8:00+ /km</span></div>
                     <div className="flex justify-between"><span className="text-orange-600 font-medium">Tempo / MP</span><span className="text-slate-600">6:20-6:45 /km</span></div>
                     <div className="flex justify-between"><span className="text-red-600 font-medium">Intervals</span><span className="text-slate-600">5:30-6:10 /km</span></div>
-                    <div className="flex justify-between"><span className="text-purple-600 font-medium">Race Day Goal</span><span className="text-slate-600">~6:45 /km</span></div>
+                    <div className="flex justify-between"><span className="text-purple-600 font-medium">Race Day Goal</span><span className="text-slate-600">~{secToPaceStr(goalPaceSec)} /km</span></div>
                   </div>
                   <div className="mt-3 p-2 bg-amber-50 rounded text-xs text-amber-700">
                     Click any future week row to see per-session HR and pace targets
@@ -1702,7 +1710,7 @@ export default function Dashboard() {
 
               <div className="space-y-3 mb-6">
                 {proposedPlan.plan
-                  .filter(w => w.week >= currentWeek && w.week <= 38)
+                  .filter(w => w.week >= currentWeek && w.week <= raceWeek)
                   .map(w => {
                     const isChanged = proposedPlan.changedWeeks.includes(w.week);
                     const oldWeek = trainingPlan.find(ow => ow.week === w.week);
