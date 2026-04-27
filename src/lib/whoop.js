@@ -20,15 +20,38 @@ const SPORT_ID_MAP = {
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 // Run-equivalent conversion factors (km per minute of activity).
-// Calibrated for Peloton-style indoor cycling (mixed-intensity classes,
-// usually 70–85 % HRmax) and football (90 min match with sprints).
+// Calibrated for Peloton-style indoor cycling and football matches.
 // At ~7:30/km easy run pace you cover 0.133 km per minute of running.
-//   spin     = 0.1   → 60 min Peloton ≈ 6 km, 45 min class ≈ 4.5 km
-//   football = 0.133 → 60 min ≈ 8 km, 90 min ≈ 12 km
-// Applied to duration only — actual bike distance is ignored, since
-// 30 km of casual pedalling is not equivalent to 30 km of run training.
+//   spin     = 0.1 fallback when no HR-zone breakdown is available
+//   football = 0.133 (60 min ≈ 8 km, 90 min ≈ 12 km)
+// Spin uses HR-zone-weighted intensity when available — see SPIN_FACTOR_BY_ZONE.
+// Bike distance is ignored either way; duration drives the equivalent.
 const SPIN_KM_PER_MIN = 0.1;
 const FOOTBALL_KM_PER_MIN = 0.133;
+
+// Per-zone km-per-minute factors for cycling. Reflects that time at higher
+// HR generates more training stress: a flat 1 h Z2 ride ≈ 4.8 km, a HIIT
+// hour spent mostly in Z3-Z5 ≈ 8-10 km.
+const SPIN_FACTOR_BY_ZONE = {
+  z1: 0.04,  // <60 % HRmax  — recovery / warm-up
+  z2: 0.08,  // 60-70 %      — easy endurance
+  z3: 0.12,  // 70-80 %      — tempo / aerobic threshold
+  z4: 0.16,  // 80-90 %      — lactate threshold / hard
+  z5: 0.18,  // 90+ %        — VO2max / sprint
+};
+
+function spinKmEquiv(act) {
+  const zoneSum = (act.z1 || 0) + (act.z2 || 0) + (act.z3 || 0) + (act.z4 || 0) + (act.z5 || 0);
+  // Need >50 % of the session classified into zones to trust the breakdown
+  if (zoneSum < 0.5) return act.duration * SPIN_KM_PER_MIN;
+  const factor =
+    (act.z1 || 0) * SPIN_FACTOR_BY_ZONE.z1 +
+    (act.z2 || 0) * SPIN_FACTOR_BY_ZONE.z2 +
+    (act.z3 || 0) * SPIN_FACTOR_BY_ZONE.z3 +
+    (act.z4 || 0) * SPIN_FACTOR_BY_ZONE.z4 +
+    (act.z5 || 0) * SPIN_FACTOR_BY_ZONE.z5;
+  return act.duration * factor;
+}
 
 /**
  * Fetch all workouts from WHOOP Developer API v1.
@@ -261,7 +284,7 @@ export function processActivities(activities) {
 
     const runKm = runs.reduce((s, a) => s + a.distance, 0);
     const footballEquiv = football.reduce((s, a) => s + a.duration * FOOTBALL_KM_PER_MIN, 0);
-    const spinEquiv = spin.reduce((s, a) => s + a.duration * SPIN_KM_PER_MIN, 0);
+    const spinEquiv = spin.reduce((s, a) => s + spinKmEquiv(a), 0);
 
     const longRun = runs.length > 0
       ? Math.max(...runs.map(a => a.distance))
@@ -329,7 +352,7 @@ export function processActivities(activities) {
       // Per-session detail with km-equivalent for non-run activities
       let kmEquiv = null;
       if (act.type === "Football") kmEquiv = Math.round(act.duration * FOOTBALL_KM_PER_MIN * 10) / 10;
-      else if (act.type === "Spin") kmEquiv = Math.round(act.duration * SPIN_KM_PER_MIN * 10) / 10;
+      else if (act.type === "Spin") kmEquiv = Math.round(spinKmEquiv(act) * 10) / 10;
       dayDetailMap[dow].push({
         type: act.type,
         distance: act.distance || 0,
