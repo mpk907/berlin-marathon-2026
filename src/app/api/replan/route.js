@@ -136,8 +136,10 @@ Respond with ONLY a valid JSON array of week objects. No markdown, no explanatio
       throw new Error("Claude returned empty or invalid plan");
     }
 
-    // Merge: keep original plan for weeks before currentWeek, use new plan for rest
-    const originalWeeks = currentPlan.filter(w => w.week < currentWeek);
+    // Merge: AI plan replaces overlapping weeks; everything else (history before
+    // currentWeek + post-race recovery weeks) is preserved from the original plan.
+    const newWeekNums = new Set(planJson.filter(w => w.week >= currentWeek).map(w => w.week));
+    const originalWeeks = currentPlan.filter(w => !newWeekNums.has(w.week));
     const newWeeks = planJson.filter(w => w.week >= currentWeek);
 
     // Recompute totals from daily sessions
