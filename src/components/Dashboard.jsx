@@ -94,18 +94,26 @@ export default function Dashboard() {
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalDraft, setGoalDraft] = useState("");
 
-  // Hydrate goal from localStorage (browser only)
+  // Hydrate goal from localStorage (browser only). Wrapped in try-catch since
+  // Safari private mode + locked-down browsers can throw SecurityError on access.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(GOAL_PACE_STORAGE_KEY);
-    const parsed = parseInt(raw, 10);
-    if (Number.isFinite(parsed) && parsed >= 240 && parsed <= 600) setGoalPaceSec(parsed);
+    try {
+      const raw = window.localStorage.getItem(GOAL_PACE_STORAGE_KEY);
+      const parsed = parseInt(raw, 10);
+      if (Number.isFinite(parsed) && parsed >= 240 && parsed <= 600) setGoalPaceSec(parsed);
+    } catch (e) {
+      console.warn("[goalPace] localStorage read failed:", e.message);
+    }
   }, []);
 
   const saveGoalPace = useCallback((sec) => {
     setGoalPaceSec(sec);
-    if (typeof window !== "undefined") {
+    if (typeof window === "undefined") return;
+    try {
       window.localStorage.setItem(GOAL_PACE_STORAGE_KEY, String(sec));
+    } catch (e) {
+      console.warn("[goalPace] localStorage write failed:", e.message);
     }
   }, []);
 
@@ -324,6 +332,7 @@ export default function Dashboard() {
           currentWeek,
           weeklyData,
           currentPlan: trainingPlan,
+          goalPaceSec,
         }),
       });
       const result = await res.json();
@@ -342,7 +351,7 @@ export default function Dashboard() {
       setReplanError("Could not reach replan API: " + e.message);
     }
     setReplanning(false);
-  }, [replanReason, replanCustom, currentWeek, weeklyData, trainingPlan]);
+  }, [replanReason, replanCustom, currentWeek, weeklyData, trainingPlan, goalPaceSec]);
 
   const acceptReplan = useCallback(() => {
     if (!proposedPlan) return;
@@ -373,7 +382,9 @@ export default function Dashboard() {
     const lastWeek = [...completed].reverse().find(w => (w.run || 0) + (w.football || 0) + (w.spin || 0) > 0) || completed[completed.length - 1];
     const lastWeekKm = lastWeek ? (lastWeek.run || 0) + (lastWeek.football || 0) + (lastWeek.spin || 0) : 0;
 
-    const raceDate = new Date(2026, 8, 28);
+    // Berlin start ~9:00 CEST = 7:00 UTC. UTC pin keeps "weeksToRace" stable
+    // for users in non-Berlin timezones.
+    const raceDate = new Date("2026-09-28T07:00:00Z");
     const now = new Date();
     const weeksToRace = Math.max(0, Math.ceil((raceDate - now) / (7 * 86400000)));
 
