@@ -18,6 +18,7 @@ import {
   marathonTimeFromPaceSec,
   DEFAULT_TARGET_PACE_SEC,
 } from "@/lib/projection";
+import { computeCoachInsights } from "@/lib/coach";
 
 const GOAL_PACE_STORAGE_KEY = "berlin2026:goalPaceSec";
 
@@ -618,6 +619,14 @@ export default function Dashboard() {
     return { latest, baseline, deltaSec };
   }, [fitnessTrend]);
 
+  const coachInsights = useMemo(() => computeCoachInsights({
+    weeklyData,
+    dailyActualDetails,
+    trainingPlan,
+    currentWeek,
+    raceWeek,
+  }), [weeklyData, dailyActualDetails, trainingPlan, currentWeek, raceWeek]);
+
   const filteredPlan = useMemo(() => {
     if (planView === "upcoming") return trainingPlan.filter(w => w.week >= currentWeek - 1 && w.week <= currentWeek + 5);
     if (planView === "past") return trainingPlan.filter(w => w.week <= currentWeek);
@@ -977,6 +986,43 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+
+            {/* Adaptive coach insights — derived from actuals, not plan ambition */}
+            {coachInsights.length > 0 && (
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-700">Coach Notes</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Adapted from your achieved volume, not the plan target.</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {coachInsights.map((ins, i) => {
+                    const tone =
+                      ins.severity === "warn"
+                        ? "border-amber-200 bg-amber-50"
+                        : ins.severity === "good"
+                        ? "border-emerald-200 bg-emerald-50"
+                        : "border-slate-200 bg-slate-50";
+                    const titleTone =
+                      ins.severity === "warn"
+                        ? "text-amber-900"
+                        : ins.severity === "good"
+                        ? "text-emerald-900"
+                        : "text-slate-800";
+                    return (
+                      <div key={i} className={`rounded-lg border p-3 ${tone}`}>
+                        <div className={`flex items-center gap-2 mb-1 font-semibold text-sm ${titleTone}`}>
+                          <span className="text-base leading-none">{ins.icon}</span>
+                          <span>{ins.title}</span>
+                        </div>
+                        <p className="text-sm text-slate-700 leading-relaxed">{ins.body}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
               <h3 className="text-sm font-semibold text-slate-700 mb-4">Weekly Volume vs Plan</h3>
