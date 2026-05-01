@@ -305,9 +305,32 @@ export default function Dashboard() {
   const undoSwap = useCallback(() => {
     if (!undoState) return;
     clearTimeout(undoState.timeout);
-    savePlan(undoState.plan, "undo swap");
+    savePlan(undoState.plan, undoState.kind === "coach" ? "undo coach patch" : "undo swap");
     setUndoState(null);
   }, [undoState, savePlan]);
+
+  // ═══ COACH PATCH: apply a single targeted plan adjustment ═══
+  // The marathon goal stays — only the volume of one specific session shifts
+  // to match achieved progression.
+  const applyCoachPatch = useCallback((patch) => {
+    if (!patch) return;
+    const oldPlan = [...trainingPlan];
+    const newPlan = trainingPlan.map(w => {
+      if (w.week !== patch.weekNum) return w;
+      const updated = { ...w };
+      const updatedDetail = { ...(w.detail || {}) };
+      for (const c of patch.changes) {
+        updated[c.day] = c.session;
+        if (c.detail) updatedDetail[c.day] = c.detail;
+      }
+      updated.detail = updatedDetail;
+      return updated;
+    });
+    if (undoState?.timeout) clearTimeout(undoState.timeout);
+    const timeout = setTimeout(() => setUndoState(null), 6000);
+    setUndoState({ plan: oldPlan, timeout, kind: "coach", label: patch.label });
+    savePlan(newPlan, `coach: ${patch.label}`);
+  }, [trainingPlan, savePlan, undoState]);
 
   // ═══ REPLAN: generate new plan via Claude API ═══
   const generateReplan = useCallback(async () => {
@@ -990,12 +1013,22 @@ export default function Dashboard() {
             {/* Adaptive coach insights — derived from actuals, not plan ambition */}
             {coachInsights.length > 0 && (
               <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
                   <div>
                     <h3 className="text-sm font-semibold text-slate-700">Coach Notes</h3>
                     <p className="text-xs text-slate-400 mt-0.5">Adapted from your achieved volume, not the plan target.</p>
                   </div>
                 </div>
+
+                {/* Goal-anchor banner — clarify that adjustments don't move the target */}
+                <div className="mb-4 px-3 py-2 rounded-md bg-indigo-50 border border-indigo-100 text-xs text-indigo-900 flex items-start gap-2">
+                  <span className="text-base leading-none">🎯</span>
+                  <span>
+                    Marathon goal still <span className="font-semibold">{secToTimeStr(goalMarathonSec)}</span> @ <span className="font-semibold">{secToPaceStr(goalPaceSec)}/km</span> on 28 Sep 2026.
+                    Patches below adjust this week's volume, not the destination.
+                  </span>
+                </div>
+
                 <div className="space-y-3">
                   {coachInsights.map((ins, i) => {
                     const tone =
@@ -1010,6 +1043,10 @@ export default function Dashboard() {
                         : ins.severity === "good"
                         ? "text-emerald-900"
                         : "text-slate-800";
+                    const buttonTone =
+                      ins.severity === "warn"
+                        ? "bg-amber-600 hover:bg-amber-700 text-white"
+                        : "bg-indigo-600 hover:bg-indigo-700 text-white";
                     return (
                       <div key={i} className={`rounded-lg border p-3 ${tone}`}>
                         <div className={`flex items-center gap-2 mb-1 font-semibold text-sm ${titleTone}`}>
@@ -1017,6 +1054,17 @@ export default function Dashboard() {
                           <span>{ins.title}</span>
                         </div>
                         <p className="text-sm text-slate-700 leading-relaxed">{ins.body}</p>
+                        {ins.patch && (
+                          <div className="mt-2.5 flex items-center gap-3 flex-wrap">
+                            <button
+                              onClick={() => applyCoachPatch(ins.patch)}
+                              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition ${buttonTone}`}
+                            >
+                              Apply: {ins.patch.label}
+                            </button>
+                            <span className="text-xs text-slate-500">Single-week change · undoable</span>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1847,7 +1895,11 @@ export default function Dashboard() {
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4">
           <div className="bg-slate-800 text-white rounded-xl px-5 py-3 shadow-2xl flex items-center gap-4 text-sm">
             <span>
-              Moved session: <span className="font-medium capitalize">{undoState.fromDay}</span> ↔ <span className="font-medium capitalize">{undoState.toDay}</span> (Week {undoState.weekNum})
+              {undoState.kind === "coach" ? (
+                <>Coach patch applied: <span className="font-medium">{undoState.label}</span></>
+              ) : (
+                <>Moved session: <span className="font-medium capitalize">{undoState.fromDay}</span> ↔ <span className="font-medium capitalize">{undoState.toDay}</span> (Week {undoState.weekNum})</>
+              )}
             </span>
             <button
               onClick={undoSwap}
