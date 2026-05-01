@@ -61,7 +61,7 @@ export const trainingPlan = [
   { week: 20, dates: "18-24 May", total: 33, mon: "Rest", tue: "9 easy", wed: "Rest", thu: "Match", fri: "Rest", sat: "Rest", sun: "14 easy", notes: "EASE",
     detail: { tue: {km:9,type:"easy",hr:"Z1-Z2 < 146",pace:"8:00+"}, sun: {km:14,type:"long easy",hr:"Z2 127-146",pace:"7:45-8:15"}} },
   { week: 21, dates: "25-31 May", total: 44, mon: "Rest", tue: "11 easy", wed: "Rest", thu: "13 easy", fri: "Match", sat: "Rest", sun: "20 long", notes: "Match Fri",
-    detail: { tue: {km:11,type:"easy",hr:"Z2 127-146",pace:"7:30-8:00"}, thu: {km:13,type:"easy",hr:"Z2 127-146",pace:"7:30-8:00 (pre-match)"}, sun: {km:20,type:"long",hr:"Z2, last 5km@MP",pace:"7:40 then 6:30 last 5km"}} },
+    detail: { tue: {km:11,type:"easy",hr:"Z2 127-146",pace:"7:30-8:00"}, thu: {km:13,type:"easy",hr:"Z2 127-146",pace:"7:30-8:00 (pre-match)"}, sun: {km:20,type:"long",hr:"Z2, last 5km@MP",pace:"7:40 then 6:45 last 5km"}} },
   { week: 22, dates: "01-07 Jun", total: 45, mon: "Rest", tue: "11 easy", wed: "Rest", thu: "13 (3x3km)", fri: "Match", sat: "Rest", sun: "20 long", notes: "Tempo Thu",
     detail: { tue: {km:11,type:"easy",hr:"Z2 127-146",pace:"7:30-8:00"}, thu: {km:13,type:"tempo",hr:"Z3 146-164",pace:"3x3km @ 6:35-6:50, 2min jog"}, sun: {km:20,type:"long",hr:"Z2 steady",pace:"7:40-8:00"}} },
   { week: 23, dates: "08-14 Jun", total: 46, mon: "Rest", tue: "12 easy", wed: "Rest", thu: "14 quality", fri: "Rest", sat: "Rest", sun: "20 long", notes: "No match",
