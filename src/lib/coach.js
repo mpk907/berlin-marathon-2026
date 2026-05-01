@@ -24,6 +24,35 @@ function parsePlannedKm(session) {
   return m ? parseFloat(m[1]) : 0;
 }
 
+// Scale a planned quality session string + detail down to a target work volume.
+// Preserves rep count when "(NxYkm)" is present, otherwise treats it as
+// continuous tempo with a 3 km warmup+cooldown buffer.
+function scaleQualitySession(sessionStr, plannedDetail, planType, targetWorkKm) {
+  const totalKm = (() => {
+    const m = sessionStr?.match?.(/^(\d+\.?\d*)/);
+    return m ? parseFloat(m[1]) : 0;
+  })();
+  const repMatch = sessionStr?.match?.(/\((\d+)x(\d+\.?\d*)km\)/);
+  let newSessionStr, newTotal;
+  if (repMatch) {
+    const plannedReps = parseInt(repMatch[1], 10);
+    const plannedRepKm = parseFloat(repMatch[2]);
+    const plannedWorkKm = plannedReps * plannedRepKm;
+    const wuCd = Math.max(0, totalKm - plannedWorkKm);
+    const newRepKm = Math.max(0.5, Math.round(targetWorkKm / plannedReps * 4) / 4);
+    const newWork = plannedReps * newRepKm;
+    newTotal = Math.round((newWork + wuCd) * 10) / 10;
+    newSessionStr = `${newTotal} (${plannedReps}x${newRepKm}km)`;
+  } else {
+    // Continuous tempo — keep ~3 km of WU+CD around the work block
+    const wuCd = 3;
+    newTotal = Math.round((targetWorkKm + wuCd) * 10) / 10;
+    newSessionStr = `${newTotal} ${planType}`;
+  }
+  const newDetail = { ...(plannedDetail || {}), km: newTotal };
+  return { newSessionStr, newTotal, newDetail };
+}
+
 function findQualityActuals(dailyActualDetails) {
   const list = [];
   for (const [wkStr, days] of Object.entries(dailyActualDetails || {})) {
@@ -179,50 +208,86 @@ function qualityInsight(dailyActualDetails, trainingPlan, currentWeek) {
     const nextKm = nextQuality.km;
     const ratio = nextKm / Math.max(lastKm, 1);
     if (ratio > 1.4) {
-      // Recommend +25% volume progression. Match the planned session's
-      // structure (warmup + work + cooldown) but shrink the work block.
+      // Single-week patch: scale the immediate next quality to lastKm × 1.25.
       const progressed = Math.round(lastKm * 1.25 * 10) / 10;
       const wkPlan = trainingPlan.find(p => p.week === nextQuality.week);
       const sessionStr = wkPlan?.[nextQuality.day] || "";
-      const totalKm = parsePlannedKm(sessionStr); // includes WU+CD
-      // Parse "X (NxYkm)" — preserve the rep count, shrink the rep distance
-      // so the user advances ONE variable (rep distance) toward the plan target.
-      const repMatch = sessionStr.match(/\((\d+)x(\d+\.?\d*)km\)/);
-      let newSessionStr, newTotal;
-      if (repMatch) {
-        const plannedReps = parseInt(repMatch[1], 10);
-        const plannedRepKm = parseFloat(repMatch[2]);
-        const plannedWorkKm = plannedReps * plannedRepKm;
-        const wuCd = Math.max(0, totalKm - plannedWorkKm);
-        // Round new rep distance to nearest 0.25 km for clean session strings
-        const newRepKm = Math.max(0.5, Math.round(progressed / plannedReps * 4) / 4);
-        const newWork = plannedReps * newRepKm;
-        newTotal = Math.round((newWork + wuCd) * 10) / 10;
-        newSessionStr = `${newTotal} (${plannedReps}x${newRepKm}km)`;
-      } else {
-        // Tempo / continuous quality without a rep pattern — scale total km directly
-        const wuCd = Math.max(0, totalKm - nextKm); // assume planned km == work km here
-        newTotal = Math.round((progressed + wuCd) * 10) / 10;
-        newSessionStr = `${newTotal} ${nextQuality.type}`;
-      }
       const baseDetail = wkPlan?.detail?.[nextQuality.day] || {};
-      const newDetail = { ...baseDetail, km: newTotal };
+      const single = scaleQualitySession(sessionStr, baseDetail, nextQuality.type, progressed);
+
+      // Cascade: apply +25 % rolling progression across the next quality
+      // sessions in the plan, capping at the original planned volume.
+      const cascadeChanges = [{
+        week: nextQuality.week,
+        day: nextQuality.day,
+        session: single.newSessionStr,
+        detail: single.newDetail,
+      }];
+      let prevWorkKm = progressed;
+      let lookaheadEnd = nextQuality.week + 6;
+      // Collect every quality session in the next 6 weeks AFTER the immediate one
+      for (let wk = nextQuality.week + 1; wk <= lookaheadEnd; wk++) {
+        const w = trainingPlan.find(p => p.week === wk);
+        if (!w?.detail) continue;
+        for (const [day, d] of Object.entries(w.detail)) {
+          if (!["tempo", "intervals", "MP intervals", "MP continuous", "quality"].includes(d.type)) continue;
+          const planTotal = parsePlannedKm(w[day]);
+          if (planTotal === 0) continue;
+
+          // Compare PLANNED WORK (not total km) to the progression target.
+          // Total km includes warmup/cooldown/recovery jogs which aren't real
+          // training stress and shouldn't drive the comparison.
+          const repMatch = (w[day] || "").match(/\((\d+)x(\d+\.?\d*)km\)/);
+          const plannedWork = repMatch
+            ? parseInt(repMatch[1], 10) * parseFloat(repMatch[2])
+            : planTotal;
+          const target = prevWorkKm * 1.25;
+
+          // Plan already at or below target → skip and advance baseline.
+          if (plannedWork <= target + 0.5) {
+            prevWorkKm = plannedWork;
+            continue;
+          }
+          const sc = scaleQualitySession(w[day], d, d.type, target);
+          // Skip if scaling would actually inflate vs plan total
+          if (sc.newTotal >= planTotal - 0.5) {
+            prevWorkKm = plannedWork;
+            continue;
+          }
+          cascadeChanges.push({
+            week: wk,
+            day,
+            session: sc.newSessionStr,
+            detail: sc.newDetail,
+          });
+          prevWorkKm = Math.round(target * 10) / 10;
+        }
+      }
+
+      const cascadeFutureLabel = cascadeChanges.length > 1
+        ? cascadeChanges.slice(1).map(c => `W${c.week}: ${c.detail.km}`).join(", ")
+        : null;
+
       return {
         icon: "💪",
         severity: "warn",
         title: "Quality progression too steep",
-        body: `Last quality: ${lastKm.toFixed(1)} km @ ${lastQuality.pace || "—"}/km, avg HR ${lastQuality.avgHr}. Plan W${nextQuality.week} ${nextQuality.day}: ${nextKm} km ${nextQuality.type} — a +${Math.round((ratio - 1) * 100)} % jump. Try ${progressed} km of work next time (+25 %). Marathon-pace target stays the same; just one variable progresses per cycle.`,
+        body: `Last quality: ${lastKm.toFixed(1)} km @ ${lastQuality.pace || "—"}/km, avg HR ${lastQuality.avgHr}. Plan W${nextQuality.week} ${nextQuality.day}: ${nextKm} km ${nextQuality.type} — a +${Math.round((ratio - 1) * 100)} % jump. Try ${progressed} km of work next time (+25 %). Marathon-pace target stays the same; one variable progresses per cycle.`,
         patch: {
-          label: `${nextQuality.day} W${nextQuality.week}: ${nextKm} km → ${newTotal} km`,
+          label: `${nextQuality.day} W${nextQuality.week}: ${nextKm} km → ${single.newTotal} km`,
           changes: [
             {
               week: nextQuality.week,
               day: nextQuality.day,
-              session: newSessionStr,
-              detail: newDetail,
+              session: single.newSessionStr,
+              detail: single.newDetail,
             },
           ],
         },
+        cascade: cascadeChanges.length > 1 ? {
+          label: `Re-anchor: this + next ${cascadeChanges.length - 1} quality sessions (${cascadeFutureLabel})`,
+          changes: cascadeChanges,
+        } : null,
       };
     }
     return {
