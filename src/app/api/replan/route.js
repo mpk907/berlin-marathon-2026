@@ -20,7 +20,7 @@ export async function POST(request) {
   }
 
   try {
-    const { reason, currentWeek, weeklyData, currentPlan, preferences } = await request.json();
+    const { reason, currentWeek, weeklyData, currentPlan, preferences, goalPaceSec } = await request.json();
 
     if (!reason || !currentWeek || !currentPlan) {
       return NextResponse.json(
@@ -28,6 +28,14 @@ export async function POST(request) {
         { status: 400 }
       );
     }
+
+    // Format goal pace for the prompt; default to "~6:30-6:45/km" if missing
+    const goalPaceStr = (() => {
+      if (typeof goalPaceSec !== "number" || !Number.isFinite(goalPaceSec)) return "~6:30-6:45/km";
+      const m = Math.floor(goalPaceSec / 60);
+      const s = Math.round(goalPaceSec - m * 60);
+      return `${m}:${String(s).padStart(2, "0")}/km`;
+    })();
 
     // Build context for Claude
     const trainingHistory = (weeklyData || [])
@@ -45,14 +53,14 @@ export async function POST(request) {
       })
       .join("\n");
 
-    const prompt = `You are a marathon training coach adjusting a training plan for the Berlin Marathon on September 27, 2026.
+    const prompt = `You are a marathon training coach adjusting a training plan for the Berlin Marathon on September 28, 2026.
 
 ## Athlete Profile
 - First marathon
 - Currently in week ${currentWeek} of 38
 - Plays recreational football (soccer) during the season (through mid-June)
 - Preferred rest days: Monday, Wednesday (can be flexible)
-- Max HR: ~182 bpm, easy pace: 7:30-8:00/km, marathon goal pace: ~6:30-6:45/km
+- Max HR: ~182 bpm, easy pace: 7:30-8:00/km, marathon goal pace: ${goalPaceStr}
 
 ## Reason for Replanning
 ${reason}
