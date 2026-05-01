@@ -19,6 +19,7 @@ import {
   DEFAULT_TARGET_PACE_SEC,
 } from "@/lib/projection";
 import { computeCoachInsights } from "@/lib/coach";
+import { findObsoletePaces, migrateObsoletePaces } from "@/lib/plan-migration";
 
 const GOAL_PACE_STORAGE_KEY = "berlin2026:goalPaceSec";
 
@@ -660,6 +661,15 @@ export default function Dashboard() {
   }, [projection]);
   const goalSuggestionDelta = suggestedGoalSec ? suggestedGoalSec - goalPaceSec : null;
 
+  const obsoletePaces = useMemo(
+    () => findObsoletePaces(trainingPlan, staticTrainingPlan),
+    [trainingPlan]
+  );
+  const refreshObsoletePaces = useCallback(() => {
+    const migrated = migrateObsoletePaces(trainingPlan, staticTrainingPlan);
+    savePlan(migrated, `migrate ${obsoletePaces.length} obsolete pace prescription${obsoletePaces.length === 1 ? "" : "s"}`);
+  }, [trainingPlan, savePlan, obsoletePaces.length]);
+
   const coachInsights = useMemo(() => computeCoachInsights({
     weeklyData,
     dailyActualDetails,
@@ -907,6 +917,25 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+
+      {/* Plan-migration nudge — saved plan has stale pace prescriptions */}
+      {obsoletePaces.length > 0 && (
+        <div className="px-4 sm:px-8 mt-3">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex-1 text-xs sm:text-sm text-amber-900">
+              <span className="font-semibold">⚠ Saved plan has {obsoletePaces.length} session{obsoletePaces.length === 1 ? "" : "s"} with older pace prescriptions.</span>{" "}
+              <span className="text-amber-800">e.g. W{obsoletePaces[0].week} {obsoletePaces[0].day}: <span className="line-through">{obsoletePaces[0].oldPace}</span> → <span className="font-medium">{obsoletePaces[0].newPace}</span>{obsoletePaces.length > 1 ? ` (+${obsoletePaces.length - 1} more)` : ""}</span>
+            </div>
+            <button
+              onClick={refreshObsoletePaces}
+              className="text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg transition w-full sm:w-auto whitespace-nowrap"
+              title="Replace only the outdated pace fields. Custom volumes and Coach-Note patches stay."
+            >
+              Refresh paces
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <div className="px-4 sm:px-8 mt-4 pb-8">
