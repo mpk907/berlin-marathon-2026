@@ -951,7 +951,9 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <div className="text-xs text-slate-400 mb-1">
-                    {fitnessSummary?.baseline ? `vs W${fitnessSummary.baseline.week}` : "Change"}
+                    {fitnessSummary?.baseline && fitnessSummary?.latest
+                      ? `vs W${fitnessSummary.baseline.week} (${fitnessSummary.latest.week - fitnessSummary.baseline.week} wk ago)`
+                      : "Change"}
                   </div>
                   {fitnessSummary && fitnessSummary.deltaSec !== null ? (
                     <>
@@ -1009,6 +1011,11 @@ export default function Dashboard() {
                       💡 Suggested: {secToPaceStr(suggestedGoalSec)}/km
                       <span className="text-indigo-500">→ Adopt</span>
                     </button>
+                  )}
+                  {!suggestedGoalSec && !editingGoal && (
+                    <div className="mt-2 text-xs text-slate-400 italic">
+                      Sync WHOOP and log a few runs to get a data-driven goal suggestion here.
+                    </div>
                   )}
                 </div>
               </div>
@@ -1108,10 +1115,11 @@ export default function Dashboard() {
                                 <button
                                   onClick={() => applyCoachPatch(ins.cascade)}
                                   className="text-xs font-semibold px-3 py-1.5 rounded-lg transition w-full sm:w-auto text-left sm:text-center whitespace-normal leading-snug bg-white border border-amber-300 text-amber-800 hover:bg-amber-100"
+                                  title="Re-anchor: rewrite this week and the next few sessions of this type so the trajectory grows from your achieved level. Plan ceiling stays."
                                 >
                                   Apply + re-anchor: {ins.cascade.label}
                                 </button>
-                                <span className="text-xs text-slate-500">Plan ceiling preserved · undoable</span>
+                                <span className="text-xs text-slate-500">Multi-week, plan ceiling preserved · undoable</span>
                               </div>
                             )}
                           </div>
@@ -1153,7 +1161,7 @@ export default function Dashboard() {
                     <Tooltip formatter={(val) => [`${Math.floor(val)}:${String(Math.round((val % 1) * 60)).padStart(2, "0")} /km`]} />
                     <Area type="monotone" dataKey="pace" fill="#F3E5F5" stroke="#7B1FA2" strokeWidth={2.5} dot={{ r: 4, fill: "#7B1FA2" }} name="Avg Pace" />
                     {/* Race target line driven by the editable goal pace (sec → minutes for the chart's domain) */}
-                    <Line type="monotone" dataKey={() => goalPaceSec / 60} stroke="#AB47BC" strokeWidth={1.5} strokeDasharray="4 4" dot={false} name={`Race Target ${secToPaceStr(goalPaceSec)}`} />
+                    <Line type="monotone" dataKey={() => goalPaceSec / 60} stroke="#AB47BC" strokeWidth={1.5} strokeDasharray="4 4" dot={false} name={`Your goal ${secToPaceStr(goalPaceSec)}/km`} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -1517,7 +1525,7 @@ export default function Dashboard() {
                     <div className="flex justify-between"><span className="text-purple-600 font-medium">Race Day Goal (MP)</span><span className="text-slate-600">{secToPaceStr(goalPaceSec)} /km</span></div>
                   </div>
                   <div className="mt-3 p-2 bg-amber-50 rounded text-xs text-amber-700">
-                    Click any future week row to see per-session HR and pace targets
+                    Ranges are general guides — individual weeks may prescribe slightly different paces depending on the training phase. Click any future week row to see per-session HR and pace targets.
                   </div>
                 </div>
               </div>
