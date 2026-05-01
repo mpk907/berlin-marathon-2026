@@ -422,21 +422,26 @@ function aerobicBaseInsight(weeklyData) {
  * Returns up to 4 ranked insights, most actionable first (warnings before goods).
  */
 export function computeCoachInsights({ weeklyData, dailyActualDetails, trainingPlan, currentWeek, raceWeek }) {
-  if (currentWeek > raceWeek) {
-    return [{
-      icon: "🎉",
-      severity: "good",
-      title: "Recovery phase",
-      body: "Race is in the rear-view. Focus is on rest, easy movement, and sleep. The base built over 38 weeks doesn't disappear in a week.",
-    }];
-  }
-
-  const insights = [
-    longRunInsight(weeklyData, trainingPlan, currentWeek),
-    qualityInsight(dailyActualDetails, trainingPlan, currentWeek),
-    adherenceInsight(weeklyData, trainingPlan, currentWeek),
-    aerobicBaseInsight(weeklyData),
-  ].filter(Boolean);
+  // In recovery, suppress prescriptive long-run / quality patches (the plan
+  // is intentionally light) but keep adherence and aerobic-base context so
+  // the user still sees fitness signal during the recovery block.
+  const inRecovery = currentWeek > raceWeek;
+  const insights = inRecovery
+    ? [
+        {
+          icon: "🎉",
+          severity: "good",
+          title: "Recovery phase",
+          body: "Race is in the rear-view. Long-run and quality prescriptions are paused — focus is on rest, easy movement, and sleep. Adherence and fitness trends below still tell you how recovery is going.",
+        },
+        aerobicBaseInsight(weeklyData),
+      ].filter(Boolean)
+    : [
+        longRunInsight(weeklyData, trainingPlan, currentWeek),
+        qualityInsight(dailyActualDetails, trainingPlan, currentWeek),
+        adherenceInsight(weeklyData, trainingPlan, currentWeek),
+        aerobicBaseInsight(weeklyData),
+      ].filter(Boolean);
 
   // Sort: warnings first, then info, then good
   const order = { warn: 0, info: 1, good: 2 };
