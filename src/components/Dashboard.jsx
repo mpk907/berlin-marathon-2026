@@ -1055,10 +1055,10 @@ export default function Dashboard() {
                         </div>
                         <p className="text-sm text-slate-700 leading-relaxed">{ins.body}</p>
                         {ins.patch && (
-                          <div className="mt-2.5 flex items-center gap-3 flex-wrap">
+                          <div className="mt-2.5 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                             <button
                               onClick={() => applyCoachPatch(ins.patch)}
-                              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition ${buttonTone}`}
+                              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition w-full sm:w-auto text-left sm:text-center whitespace-normal leading-snug ${buttonTone}`}
                             >
                               Apply: {ins.patch.label}
                             </button>
@@ -1892,9 +1892,9 @@ export default function Dashboard() {
 
       {/* Undo toast for plan swaps */}
       {undoState && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4">
-          <div className="bg-slate-800 text-white rounded-xl px-5 py-3 shadow-2xl flex items-center gap-4 text-sm">
-            <span>
+        <div className="fixed bottom-4 sm:bottom-6 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 max-w-md sm:max-w-2xl mx-auto">
+          <div className="bg-slate-800 text-white rounded-xl px-4 sm:px-5 py-3 shadow-2xl flex items-center gap-3 sm:gap-4 text-xs sm:text-sm">
+            <span className="flex-1 min-w-0 break-words">
               {undoState.kind === "coach" ? (
                 <>Coach patch applied: <span className="font-medium">{undoState.label}</span></>
               ) : (
@@ -1903,7 +1903,7 @@ export default function Dashboard() {
             </span>
             <button
               onClick={undoSwap}
-              className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg font-medium transition"
+              className="flex-shrink-0 bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg font-medium transition"
             >
               Undo
             </button>
