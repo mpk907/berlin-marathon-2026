@@ -215,6 +215,20 @@ function qualityInsight(dailyActualDetails, trainingPlan, currentWeek) {
       const baseDetail = wkPlan?.detail?.[nextQuality.day] || {};
       const single = scaleQualitySession(sessionStr, baseDetail, nextQuality.type, progressed);
 
+      // ── Achieved-pace-driven prescription ──
+      // If the user has a measurable pace from their last quality, write it
+      // into the patched detail INSTEAD of the original plan's ambitious
+      // pace. Coaching principle: advance ONE variable per cycle. Volume
+      // is going up by 25 %; pace stays at what was just proven, then
+      // progresses next cycle (or by manual edit).
+      const achievedPaceSec = paceStrToSec(lastQuality.pace);
+      const heldPaceLabel = achievedPaceSec
+        ? `${secToPaceStr(achievedPaceSec)} (hold pace, build volume)`
+        : null;
+      if (heldPaceLabel) {
+        single.newDetail = { ...single.newDetail, pace: heldPaceLabel };
+      }
+
       // Cascade: apply +25 % rolling progression across the next quality
       // sessions in the plan, capping at the original planned volume.
       const cascadeChanges = [{
@@ -258,7 +272,7 @@ function qualityInsight(dailyActualDetails, trainingPlan, currentWeek) {
             week: wk,
             day,
             session: sc.newSessionStr,
-            detail: sc.newDetail,
+            detail: heldPaceLabel ? { ...sc.newDetail, pace: heldPaceLabel } : sc.newDetail,
           });
           prevWorkKm = Math.round(target * 10) / 10;
         }
@@ -268,11 +282,14 @@ function qualityInsight(dailyActualDetails, trainingPlan, currentWeek) {
         ? cascadeChanges.slice(1).map(c => `W${c.week}: ${c.detail.km}`).join(", ")
         : null;
 
+      const paceCoachLine = heldPaceLabel
+        ? ` Hold ${secToPaceStr(achievedPaceSec)}/km (your last achieved pace) — build volume first, push pace next cycle.`
+        : ` One variable progresses per cycle — keep last cycle's pace, advance volume.`;
       return {
         icon: "💪",
         severity: "warn",
         title: "Quality progression too steep",
-        body: `Last quality: ${lastKm.toFixed(1)} km @ ${lastQuality.pace || "—"}/km, avg HR ${lastQuality.avgHr}. Plan W${nextQuality.week} ${nextQuality.day}: ${nextKm} km ${nextQuality.type} — a +${Math.round((ratio - 1) * 100)} % jump. Try ${progressed} km of work next time (+25 %). Marathon-pace target stays the same; one variable progresses per cycle.`,
+        body: `Last quality: ${lastKm.toFixed(1)} km @ ${lastQuality.pace || "—"}/km, avg HR ${lastQuality.avgHr}. Plan W${nextQuality.week} ${nextQuality.day}: ${nextKm} km ${nextQuality.type} — a +${Math.round((ratio - 1) * 100)} % jump. Try ${progressed} km of work next time (+25 %).${paceCoachLine} Marathon goal stays put.`,
         patch: {
           label: `${nextQuality.day} W${nextQuality.week}: ${nextKm} km → ${single.newTotal} km`,
           changes: [
