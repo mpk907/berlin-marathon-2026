@@ -1560,21 +1560,33 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Plan legend */}
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500 px-2">
+            {/* Plan legend — split into per-day cell colours and per-week row colours so swatches match actual styling */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500 px-2">
+              <span className="font-semibold text-slate-600">Cells:</span>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: "#DBEAFE", border: "2px solid #93C5FD" }}></div> Planned
+                <div className="w-3 h-3 rounded bg-blue-50 border border-blue-200"></div> Planned
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: "#D1FAE5", border: "2px solid #6EE7B7" }}></div> Completed
+                <div className="w-3 h-3 rounded bg-emerald-50 border border-emerald-200"></div> Completed
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: "#FEF3C7", border: "2px solid #FCD34D" }}></div> Ease Week
+                <span className="text-slate-300">—</span> Rest / no run logged
+              </div>
+              <span className="text-slate-300">|</span>
+              <span className="font-semibold text-slate-600">Weeks:</span>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded bg-blue-50 border border-blue-300"></div> Current
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: "#FEE2E2", border: "2px solid #FCA5A5" }}></div> Peak
+                <div className="w-3 h-3 rounded bg-amber-50 border border-amber-200"></div> Ease
               </div>
-              <span className="text-slate-400">·</span>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded bg-green-50 border border-green-200"></div> Taper
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded bg-red-50 border border-red-200"></div> Peak
+              </div>
+              <span className="text-slate-300">|</span>
               <div className="flex items-center gap-3">
                 <span>🏃 Run</span>
                 <span>⚽ Football</span>
