@@ -79,6 +79,57 @@ function longRunInsight(weeklyData, trainingPlan, currentWeek) {
     hr: baseDetail?.hr || "Z2 127-146",
     pace: baseDetail?.pace || "7:30-8:00",
   };
+  const baseChange = {
+    week: currentWeek,
+    day: "sun",
+    session: `${recommendedRounded} long`,
+    detail: newSunDetail,
+  };
+
+  // Cascade: re-anchor the next 4 weeks of long runs to the +10% rule from
+  // the new baseline. Ease weeks (notes contain "EASE") drop to ~75% of the
+  // prior peak. Each suggestion is capped at the original planned km — the
+  // ceiling of the plan is preserved, the trajectory just enters more
+  // gently.
+  const cascadeChanges = [baseChange];
+  let prevPeak = recommendedRounded;
+  for (let wk = currentWeek + 1; wk <= currentWeek + 4; wk++) {
+    const planWk = trainingPlan.find(p => p.week === wk);
+    if (!planWk) continue;
+    const plannedSun = parsePlannedKm(planWk.sun);
+    if (plannedSun === 0) continue;
+    const isEase = (planWk.notes || "").toUpperCase().includes("EASE");
+    let suggested;
+    if (isEase) {
+      suggested = Math.round(prevPeak * 0.75);
+    } else {
+      suggested = Math.min(plannedSun, Math.round(prevPeak * LONG_RUN_PROGRESSION));
+    }
+    // Skip if already close to plan (≤ 1 km diff) — no value in nudging
+    if (suggested >= plannedSun - 0.5) {
+      if (!isEase) prevPeak = plannedSun;
+      continue;
+    }
+    const wkSunDetail = planWk.detail?.sun;
+    cascadeChanges.push({
+      week: wk,
+      day: "sun",
+      session: `${suggested} ${isEase ? "easy" : "long"}`,
+      detail: {
+        km: suggested,
+        type: wkSunDetail?.type || (isEase ? "long easy" : "long"),
+        hr: wkSunDetail?.hr || "Z2 127-146",
+        pace: wkSunDetail?.pace || "7:30-8:00",
+      },
+    });
+    if (!isEase) prevPeak = suggested;
+  }
+
+  // Build cascade summary for the button label
+  const futureLabel = cascadeChanges.length > 1
+    ? cascadeChanges.slice(1).map(c => `W${c.week}: ${c.detail.km}`).join(", ")
+    : null;
+
   return {
     icon: "🛣️",
     severity: "warn",
@@ -86,15 +137,12 @@ function longRunInsight(weeklyData, trainingPlan, currentWeek) {
     body: `Plan: ${plannedKm} km, but your longest is ${longestEver.toFixed(1)} km — a +${Math.round((plannedKm / longestEver - 1) * 100)} % jump. Aim for ~${recommendedRounded} km this Sunday (+10 % vs longest). Marathon distance doesn't move — this single week's target does.`,
     patch: {
       label: `Sunday long run: ${plannedKm} km → ${recommendedRounded} km`,
-      weekNum: currentWeek,
-      changes: [
-        {
-          day: "sun",
-          session: `${recommendedRounded} long`,
-          detail: newSunDetail,
-        },
-      ],
+      changes: [baseChange],
     },
+    cascade: cascadeChanges.length > 1 ? {
+      label: `Re-anchor: this week + next ${cascadeChanges.length - 1} long runs (${futureLabel})`,
+      changes: cascadeChanges,
+    } : null,
   };
 }
 
@@ -166,9 +214,9 @@ function qualityInsight(dailyActualDetails, trainingPlan, currentWeek) {
         body: `Last quality: ${lastKm.toFixed(1)} km @ ${lastQuality.pace || "—"}/km, avg HR ${lastQuality.avgHr}. Plan W${nextQuality.week} ${nextQuality.day}: ${nextKm} km ${nextQuality.type} — a +${Math.round((ratio - 1) * 100)} % jump. Try ${progressed} km of work next time (+25 %). Marathon-pace target stays the same; just one variable progresses per cycle.`,
         patch: {
           label: `${nextQuality.day} W${nextQuality.week}: ${nextKm} km → ${newTotal} km`,
-          weekNum: nextQuality.week,
           changes: [
             {
+              week: nextQuality.week,
               day: nextQuality.day,
               session: newSessionStr,
               detail: newDetail,

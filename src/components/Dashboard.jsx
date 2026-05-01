@@ -309,17 +309,25 @@ export default function Dashboard() {
     setUndoState(null);
   }, [undoState, savePlan]);
 
-  // ═══ COACH PATCH: apply a single targeted plan adjustment ═══
-  // The marathon goal stays — only the volume of one specific session shifts
-  // to match achieved progression.
+  // ═══ COACH PATCH: apply targeted plan adjustments (single-week or cascade) ═══
+  // Each change carries its own week so a single call can re-anchor multiple
+  // sessions. Marathon goal and the original plan ceiling stay intact — only
+  // the trajectory between achieved and planned shifts.
   const applyCoachPatch = useCallback((patch) => {
     if (!patch) return;
     const oldPlan = [...trainingPlan];
+    const changesByWeek = new Map();
+    for (const c of patch.changes) {
+      const wk = c.week;
+      if (!changesByWeek.has(wk)) changesByWeek.set(wk, []);
+      changesByWeek.get(wk).push(c);
+    }
     const newPlan = trainingPlan.map(w => {
-      if (w.week !== patch.weekNum) return w;
+      const wkChanges = changesByWeek.get(w.week);
+      if (!wkChanges) return w;
       const updated = { ...w };
       const updatedDetail = { ...(w.detail || {}) };
-      for (const c of patch.changes) {
+      for (const c of wkChanges) {
         updated[c.day] = c.session;
         if (c.detail) updatedDetail[c.day] = c.detail;
       }
@@ -1055,14 +1063,27 @@ export default function Dashboard() {
                         </div>
                         <p className="text-sm text-slate-700 leading-relaxed">{ins.body}</p>
                         {ins.patch && (
-                          <div className="mt-2.5 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                            <button
-                              onClick={() => applyCoachPatch(ins.patch)}
-                              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition w-full sm:w-auto text-left sm:text-center whitespace-normal leading-snug ${buttonTone}`}
-                            >
-                              Apply: {ins.patch.label}
-                            </button>
-                            <span className="text-xs text-slate-500">Single-week change · undoable</span>
+                          <div className="mt-2.5 flex flex-col gap-2">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                              <button
+                                onClick={() => applyCoachPatch(ins.patch)}
+                                className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition w-full sm:w-auto text-left sm:text-center whitespace-normal leading-snug ${buttonTone}`}
+                              >
+                                Apply: {ins.patch.label}
+                              </button>
+                              <span className="text-xs text-slate-500">This week only · undoable</span>
+                            </div>
+                            {ins.cascade && (
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                <button
+                                  onClick={() => applyCoachPatch(ins.cascade)}
+                                  className="text-xs font-semibold px-3 py-1.5 rounded-lg transition w-full sm:w-auto text-left sm:text-center whitespace-normal leading-snug bg-white border border-amber-300 text-amber-800 hover:bg-amber-100"
+                                >
+                                  Apply + re-anchor: {ins.cascade.label}
+                                </button>
+                                <span className="text-xs text-slate-500">Plan ceiling preserved · undoable</span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1458,11 +1479,12 @@ export default function Dashboard() {
                 <div className="mt-4 bg-white rounded-xl p-5 shadow-sm border border-slate-100">
                   <h4 className="text-sm font-semibold text-slate-700 mb-3">Pace Guide</h4>
                   <div className="space-y-2 text-xs">
-                    <div className="flex justify-between"><span className="text-green-600 font-medium">Easy / Long Run</span><span className="text-slate-600">7:30-8:00 /km</span></div>
-                    <div className="flex justify-between"><span className="text-green-600 font-medium">Recovery</span><span className="text-slate-600">8:00+ /km</span></div>
-                    <div className="flex justify-between"><span className="text-orange-600 font-medium">Tempo / MP</span><span className="text-slate-600">6:20-6:45 /km</span></div>
-                    <div className="flex justify-between"><span className="text-red-600 font-medium">Intervals</span><span className="text-slate-600">5:30-6:10 /km</span></div>
-                    <div className="flex justify-between"><span className="text-purple-600 font-medium">Race Day Goal</span><span className="text-slate-600">~{secToPaceStr(goalPaceSec)} /km</span></div>
+                    <div className="flex justify-between"><span className="text-green-600 font-medium">Easy / Long Run</span><span className="text-slate-600">{secToPaceStr(goalPaceSec + 45)}–{secToPaceStr(goalPaceSec + 75)} /km</span></div>
+                    <div className="flex justify-between"><span className="text-green-600 font-medium">Recovery</span><span className="text-slate-600">{secToPaceStr(goalPaceSec + 75)}+ /km</span></div>
+                    <div className="flex justify-between"><span className="text-orange-600 font-medium">Tempo (sustained)</span><span className="text-slate-600">{secToPaceStr(goalPaceSec + 5)}–{secToPaceStr(goalPaceSec + 25)} /km</span></div>
+                    <div className="flex justify-between"><span className="text-orange-600 font-medium">Tempo reps</span><span className="text-slate-600">{secToPaceStr(goalPaceSec - 10)}–{secToPaceStr(goalPaceSec + 5)} /km</span></div>
+                    <div className="flex justify-between"><span className="text-red-600 font-medium">Intervals (10k pace)</span><span className="text-slate-600">{secToPaceStr(goalPaceSec - 55)}–{secToPaceStr(goalPaceSec - 35)} /km</span></div>
+                    <div className="flex justify-between"><span className="text-purple-600 font-medium">Race Day Goal (MP)</span><span className="text-slate-600">{secToPaceStr(goalPaceSec)} /km</span></div>
                   </div>
                   <div className="mt-3 p-2 bg-amber-50 rounded text-xs text-amber-700">
                     Click any future week row to see per-session HR and pace targets
