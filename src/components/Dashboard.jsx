@@ -709,10 +709,17 @@ export default function Dashboard() {
                 <div className="text-sm text-slate-400">@ {secToPaceStr(projection.racePaceSec)}/km</div>
               )}
             </div>
-            <div className="text-slate-500 text-xs mt-0.5">
-              Goal {secToTimeStr(goalMarathonSec)} @ {secToPaceStr(goalPaceSec)}/km
+            <div className="text-slate-500 text-xs mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 sm:justify-end">
+              <button
+                type="button"
+                onClick={() => { setGoalDraft(secToPaceStr(goalPaceSec)); setEditingGoal(true); setActiveTab("overview"); }}
+                className="text-slate-400 hover:text-white underline-offset-2 hover:underline transition"
+                title="Edit goal pace in the Aerobic Fitness card"
+              >
+                Goal {secToTimeStr(goalMarathonSec)} @ {secToPaceStr(goalPaceSec)}/km <span className="text-indigo-300">✎</span>
+              </button>
               {projection && (
-                <span className="ml-2">
+                <span>
                   · {projection.basedOnRuns} run{projection.basedOnRuns === 1 ? "" : "s"} · {projection.method === "z2-pace" ? "Z2 pace" : projection.method === "avg-pace" ? "avg pace" : "weekly avg"}
                 </span>
               )}
