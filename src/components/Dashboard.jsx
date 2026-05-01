@@ -47,10 +47,20 @@ const DayCell = ({ planned, actual, isFuture, detail }) => {
     );
   }
   if (isFuture) {
-    const hasSession = planned && planned !== "Rest" && !planned.includes("✈️");
+    const isRest = !planned || planned === "Rest";
+    const isMatch = planned === "Match" || planned === "LAST MATCH";
+    const isTravel = planned && planned.includes("✈️");
+    const isRunSession = !isRest && !isMatch && !isTravel;
+    if (isRest) {
+      return <div className="text-xs py-1 px-1 text-slate-300 text-center">—</div>;
+    }
     return (
-      <div className={`text-xs py-1 px-1 rounded ${hasSession ? "bg-blue-50 text-blue-700 font-medium" : "text-slate-300"}`}>
-        <div>{planned || "Rest"}</div>
+      <div className={`text-xs py-1 px-1 rounded ${
+        isRunSession ? "bg-blue-50 text-blue-700 font-medium" :
+        isMatch ? "bg-orange-50 text-orange-700 font-medium" :
+        isTravel ? "bg-slate-100 text-slate-500 italic" : "text-slate-300"
+      }`}>
+        <div>{planned}</div>
         {detail && (
           <div className="mt-0.5 text-slate-400 font-normal" style={{ fontSize: "10px" }}>
             {detail.hr && <div>{detail.hr}</div>}
@@ -706,6 +716,8 @@ export default function Dashboard() {
               28 September 2026 ·{" "}
               {currentWeek > raceWeek
                 ? `Recovery week ${currentWeek - raceWeek} of ${maxPlanWeek - raceWeek}`
+                : currentWeek === raceWeek
+                ? "Race week 🎯"
                 : `${stats.weeksToRace} weeks to go`}
             </p>
           </div>
@@ -1098,8 +1110,11 @@ export default function Dashboard() {
                 <div className="mb-4 px-3 py-2 rounded-md bg-indigo-50 border border-indigo-100 text-xs text-indigo-900 flex items-start gap-2">
                   <span className="text-base leading-none">🎯</span>
                   <span>
-                    Marathon goal still <span className="font-semibold">{secToTimeStr(goalMarathonSec)}</span> @ <span className="font-semibold">{secToPaceStr(goalPaceSec)}/km</span> on 28 Sep 2026.
-                    Patches below adjust this week's volume, not the destination.
+                    {currentWeek > raceWeek ? (
+                      <>Race finished — goal was <span className="font-semibold">{secToTimeStr(goalMarathonSec)}</span> @ <span className="font-semibold">{secToPaceStr(goalPaceSec)}/km</span>. Recovery insights below.</>
+                    ) : (
+                      <>Marathon goal still <span className="font-semibold">{secToTimeStr(goalMarathonSec)}</span> @ <span className="font-semibold">{secToPaceStr(goalPaceSec)}/km</span> on 28 Sep 2026. Patches below adjust this week's volume, not the destination.</>
+                    )}
                   </span>
                 </div>
 
@@ -1186,7 +1201,7 @@ export default function Dashboard() {
                   <ComposedChart data={paceData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="week" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} domain={[6, 9]} reversed tickFormatter={v => `${Math.floor(v)}:${String(Math.round((v % 1) * 60)).padStart(2, "0")}`} />
+                    <YAxis tick={{ fontSize: 11 }} domain={["dataMin - 0.3", "dataMax + 0.3"]} reversed tickFormatter={v => `${Math.floor(v)}:${String(Math.round((v % 1) * 60)).padStart(2, "0")}`} />
                     <Tooltip formatter={(val) => [`${Math.floor(val)}:${String(Math.round((val % 1) * 60)).padStart(2, "0")} /km`]} />
                     <Area type="monotone" dataKey="pace" fill="#F3E5F5" stroke="#7B1FA2" strokeWidth={2.5} dot={{ r: 4, fill: "#7B1FA2" }} name="Avg Pace" />
                     {/* Race target line driven by the editable goal pace (sec → minutes for the chart's domain) */}
@@ -1203,7 +1218,7 @@ export default function Dashboard() {
                   <LineChart data={longRunProjection}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="week" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} domain={[0, 36]} />
+                    <YAxis tick={{ fontSize: 11 }} domain={[0, 45]} unit=" km" />
                     <Tooltip formatter={(val) => val ? [`${Number(val).toFixed(1)} km`] : "—"} />
                     <Line type="monotone" dataKey="actual" stroke="#1565C0" strokeWidth={2.5} dot={{ r: 4 }} name="Actual" connectNulls={false} />
                     <Line type="monotone" dataKey="plan" stroke="#90CAF9" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Plan" connectNulls />
@@ -1736,18 +1751,30 @@ export default function Dashboard() {
         {/* ═══ LONG RUN ═══ */}
         {activeTab === "longrun" && (
           <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4">Long Run Progression — Plan vs Actual</h3>
-            <ResponsiveContainer width="100%" height={400}>
-              <ComposedChart data={longRunProjection}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="week" tick={{ fontSize: 11 }} label={{ value: "Week", position: "insideBottom", offset: -2, fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} domain={[0, 45]} unit=" km" />
-                <Tooltip formatter={(val, name) => [`${val} km`, name]} />
-                <Legend />
-                <Bar dataKey="actual" fill="#1565C0" name="Actual Long Run" radius={[3, 3, 0, 0]} barSize={14} />
-                <Line type="monotone" dataKey="plan" stroke="#90CAF9" strokeWidth={2.5} strokeDasharray="6 3" dot={{ r: 3, fill: "#90CAF9" }} name="Plan" connectNulls />
-              </ComposedChart>
-            </ResponsiveContainer>
+            <div className="flex items-baseline justify-between gap-4 flex-wrap mb-1">
+              <h3 className="text-sm font-semibold text-slate-700">Long Run Progression — Plan vs Actual</h3>
+              {longRunProjection.some(d => d.actual > 0) && (
+                <span className="text-xs text-slate-500">Longest so far: <span className="font-semibold text-indigo-700">{Math.max(...longRunProjection.map(d => d.actual || 0)).toFixed(1)} km</span></span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mb-4">Bars are completed long runs from your synced data. Dashed line is the planned trajectory through W{maxPlanWeek}.</p>
+            {longRunProjection.length === 0 ? (
+              <div className="border border-dashed border-slate-200 rounded-lg p-8 text-center text-sm text-slate-400">
+                No long-run data yet. Sync WHOOP after a Sunday long run to populate this chart.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={400}>
+                <ComposedChart data={longRunProjection}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="week" tick={{ fontSize: 11 }} tickFormatter={v => `W${v}`} label={{ value: "Training week", position: "insideBottom", offset: -2, fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} domain={[0, 45]} unit=" km" />
+                  <Tooltip formatter={(val, name) => [`${val} km`, name]} labelFormatter={v => `Week ${v}`} />
+                  <Legend />
+                  <Bar dataKey="actual" fill="#1565C0" name="Actual Long Run" radius={[3, 3, 0, 0]} barSize={14} />
+                  <Line type="monotone" dataKey="plan" stroke="#90CAF9" strokeWidth={2.5} strokeDasharray="6 3" dot={{ r: 3, fill: "#90CAF9" }} name="Plan" connectNulls />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
           </div>
         )}
 
@@ -1793,9 +1820,21 @@ export default function Dashboard() {
                   <Line type="monotone" dataKey={() => 70} stroke="#66BB6A" strokeWidth={1.5} strokeDasharray="4 4" dot={false} name="Target 70%" />
                 </ComposedChart>
               </ResponsiveContainer>
-              <div className="mt-3 text-xs text-slate-500">
-                Weeks 8 (73%), 12 (68%), 13 (69%), 14 (93%) show your best Z2 discipline. Weeks 3 (16%), 9 (29%), 11 (22%) had too much time in Z3+. Keep targeting 70%+ for all easy runs.
-              </div>
+              {z2TrendData.length === 0 ? (
+                <div className="mt-3 border border-dashed border-slate-200 rounded-lg p-6 text-center text-sm text-slate-400">
+                  No Z2 data yet. Sync WHOOP runs to populate this trend.
+                </div>
+              ) : (() => {
+                const best = z2TrendData.filter(d => d.z2 >= 0.7).map(d => d.week);
+                const worst = z2TrendData.filter(d => d.z2 > 0 && d.z2 < 0.4).map(d => d.week);
+                return (
+                  <div className="mt-3 text-xs text-slate-500">
+                    {best.length > 0 && <>Weeks {best.join(", ")} hit the 70%+ target. </>}
+                    {worst.length > 0 && <>Weeks {worst.join(", ")} dropped below 40% — likely too much Z3+ time on easy days. </>}
+                    Aim for 70%+ on every easy/long run; tempo and intervals are the only sessions where Z3+ is intentional.
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
