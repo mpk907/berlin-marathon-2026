@@ -699,9 +699,9 @@ export default function Dashboard() {
                 : `${stats.weeksToRace} weeks to go`}
             </p>
           </div>
-          <div className="sm:text-right">
+          <div className="sm:text-right min-w-0">
             <div className="text-sm text-slate-400 mb-1">Projected finish</div>
-            <div className="flex items-baseline gap-2 sm:justify-end">
+            <div className="flex items-baseline flex-wrap gap-x-2 sm:justify-end leading-tight">
               <div className="text-2xl sm:text-3xl font-bold text-white">
                 {projection ? secToTimeStr(projection.marathonSec) : "—"}
               </div>
@@ -709,18 +709,18 @@ export default function Dashboard() {
                 <div className="text-sm text-slate-400">@ {secToPaceStr(projection.racePaceSec)}/km</div>
               )}
             </div>
-            <div className="text-slate-500 text-xs mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 sm:justify-end">
+            <div className="text-slate-500 text-xs mt-1 flex flex-col sm:flex-row sm:flex-wrap sm:justify-end gap-y-0.5 sm:gap-x-2 leading-relaxed">
               <button
                 type="button"
                 onClick={() => { setGoalDraft(secToPaceStr(goalPaceSec)); setEditingGoal(true); setActiveTab("overview"); }}
-                className="text-slate-400 hover:text-white underline-offset-2 hover:underline transition"
+                className="text-slate-400 hover:text-white underline-offset-2 hover:underline transition text-left sm:text-right"
                 title="Edit goal pace in the Aerobic Fitness card"
               >
                 Goal {secToTimeStr(goalMarathonSec)} @ {secToPaceStr(goalPaceSec)}/km <span className="text-indigo-300">✎</span>
               </button>
               {projection && (
-                <span>
-                  · {projection.basedOnRuns} run{projection.basedOnRuns === 1 ? "" : "s"} · {projection.method === "z2-pace" ? "Z2 pace" : projection.method === "avg-pace" ? "avg pace" : "weekly avg"}
+                <span className="text-slate-500">
+                  <span className="hidden sm:inline">· </span>{projection.basedOnRuns} run{projection.basedOnRuns === 1 ? "" : "s"} · {projection.method === "z2-pace" ? "Z2 pace" : projection.method === "avg-pace" ? "avg pace" : "weekly avg"}
                 </span>
               )}
             </div>
