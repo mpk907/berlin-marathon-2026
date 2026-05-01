@@ -650,6 +650,16 @@ export default function Dashboard() {
     return { latest, baseline, deltaSec };
   }, [fitnessTrend]);
 
+  // Suggested goal pace from current race-pace projection, rounded to the
+  // nearest 5 s/km and clamped to a sane beginner range. Surfaced as an
+  // "Adopt" hint when the suggestion differs meaningfully from goalPaceSec.
+  const suggestedGoalSec = useMemo(() => {
+    if (!projection?.racePaceSec) return null;
+    const rounded = Math.round(projection.racePaceSec / 5) * 5;
+    return Math.max(300, Math.min(540, rounded)); // 5:00–9:00/km
+  }, [projection]);
+  const goalSuggestionDelta = suggestedGoalSec ? suggestedGoalSec - goalPaceSec : null;
+
   const coachInsights = useMemo(() => computeCoachInsights({
     weeklyData,
     dailyActualDetails,
@@ -980,6 +990,19 @@ export default function Dashboard() {
                   <div className="text-xs text-slate-500 mt-1">
                     = {secToTimeStr(goalMarathonSec)} marathon · click to edit
                   </div>
+                  {/* Suggested goal — only shown when our estimate differs meaningfully
+                      (>10 s/km) from the user's current goal. One-click adoption. */}
+                  {suggestedGoalSec && Math.abs(goalSuggestionDelta) > 10 && !editingGoal && (
+                    <button
+                      type="button"
+                      onClick={() => saveGoalPace(suggestedGoalSec)}
+                      className="mt-2 inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 transition"
+                      title="Adopt this suggestion as your goal pace"
+                    >
+                      💡 Suggested: {secToPaceStr(suggestedGoalSec)}/km
+                      <span className="text-indigo-500">→ Adopt</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
