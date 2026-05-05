@@ -21,6 +21,23 @@ const OBSOLETE_PACE_FRAGMENTS = [
   "7:40 then 6:30",
 ];
 
+// Days of week, used for adjacency walking
+const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+// A session string counts as "quality" (high-stress, hard) if it contains
+// tempo work, intervals, MP work, or a long run. Easy / Rest / Match /
+// Travel are NOT quality.
+function isQualitySession(session) {
+  if (typeof session !== "string") return false;
+  if (session === "Rest" || session === "Match" || session === "LAST MATCH") return false;
+  if (session.includes("✈️")) return false;
+  return /tempo|long|MP|quality|\(\d+x\d/i.test(session);
+}
+
+function isMatchSession(session) {
+  return session === "Match" || session === "LAST MATCH";
+}
+
 function isObsoletePace(pace) {
   if (typeof pace !== "string") return false;
   return OBSOLETE_PACE_FRAGMENTS.some(frag => pace.includes(frag));
@@ -48,6 +65,57 @@ export function findObsoletePaces(savedPlan, defaultPlan) {
     }
   }
   return out;
+}
+
+/**
+ * Detects weeks where a Match day has a Quality session adjacent (day before
+ * or after) — this is a hard coaching rule violation: match = Z3-Z5 quality
+ * stress, can't stack with another quality without 48h+ recovery.
+ *
+ * Returns [{ week, matchDay, conflict: { day, session } }] for each violation.
+ */
+export function findMatchAdjacencyIssues(savedPlan) {
+  const issues = [];
+  if (!Array.isArray(savedPlan)) return issues;
+  for (const w of savedPlan) {
+    for (let i = 0; i < 7; i++) {
+      if (!isMatchSession(w[DAYS[i]])) continue;
+      const before = i > 0 ? { day: DAYS[i - 1], session: w[DAYS[i - 1]] } : null;
+      const after = i < 6 ? { day: DAYS[i + 1], session: w[DAYS[i + 1]] } : null;
+      const beforeBad = before && before.session !== "Rest";
+      const afterBad = after && after.session !== "Rest";
+      if (beforeBad || afterBad) {
+        issues.push({
+          week: w.week,
+          matchDay: DAYS[i],
+          conflicts: [
+            ...(beforeBad ? [before] : []),
+            ...(afterBad ? [after] : []),
+          ],
+        });
+      }
+    }
+  }
+  return issues;
+}
+
+/**
+ * For weeks flagged with match-adjacency issues, replace the entire week's
+ * sessions + detail with the current default. This is the safest fix —
+ * trying to surgically swap days could leave the week internally
+ * inconsistent (e.g., shifted tempo creating a different conflict).
+ */
+export function migrateMatchAdjacency(savedPlan, defaultPlan) {
+  if (!Array.isArray(savedPlan) || !Array.isArray(defaultPlan)) return savedPlan;
+  const issues = findMatchAdjacencyIssues(savedPlan);
+  if (issues.length === 0) return savedPlan;
+  const affectedWeeks = new Set(issues.map(i => i.week));
+  const defaultByWeek = new Map(defaultPlan.map(w => [w.week, w]));
+  return savedPlan.map(sw => {
+    if (!affectedWeeks.has(sw.week)) return sw;
+    const dw = defaultByWeek.get(sw.week);
+    return dw ? { ...dw } : sw;
+  });
 }
 
 /**

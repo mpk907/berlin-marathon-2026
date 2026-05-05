@@ -19,7 +19,7 @@ import {
   DEFAULT_TARGET_PACE_SEC,
 } from "@/lib/projection";
 import { computeCoachInsights } from "@/lib/coach";
-import { findObsoletePaces, migrateObsoletePaces } from "@/lib/plan-migration";
+import { findObsoletePaces, migrateObsoletePaces, findMatchAdjacencyIssues, migrateMatchAdjacency } from "@/lib/plan-migration";
 
 const GOAL_PACE_STORAGE_KEY = "berlin2026:goalPaceSec";
 
@@ -675,10 +675,18 @@ export default function Dashboard() {
     () => findObsoletePaces(trainingPlan, staticTrainingPlan),
     [trainingPlan]
   );
+  const matchAdjacencyIssues = useMemo(
+    () => findMatchAdjacencyIssues(trainingPlan),
+    [trainingPlan]
+  );
   const refreshObsoletePaces = useCallback(() => {
     const migrated = migrateObsoletePaces(trainingPlan, staticTrainingPlan);
     savePlan(migrated, `migrate ${obsoletePaces.length} obsolete pace prescription${obsoletePaces.length === 1 ? "" : "s"}`);
   }, [trainingPlan, savePlan, obsoletePaces.length]);
+  const refreshMatchWeeks = useCallback(() => {
+    const migrated = migrateMatchAdjacency(trainingPlan, staticTrainingPlan);
+    savePlan(migrated, `restore ${matchAdjacencyIssues.length} match-week${matchAdjacencyIssues.length === 1 ? "" : "s"} to default (rest flanks)`);
+  }, [trainingPlan, savePlan, matchAdjacencyIssues.length]);
 
   const coachInsights = useMemo(() => computeCoachInsights({
     weeklyData,
@@ -944,6 +952,27 @@ export default function Dashboard() {
               title="Replace only the outdated pace fields. Custom volumes and Coach-Note patches stay."
             >
               Refresh paces
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Match-adjacency nudge — quality session next to a Match day */}
+      {matchAdjacencyIssues.length > 0 && (
+        <div className="px-4 sm:px-8 mt-3">
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex-1 text-xs sm:text-sm text-orange-900">
+              <span className="font-semibold">⚠ {matchAdjacencyIssues.length} match-week{matchAdjacencyIssues.length === 1 ? "" : "s"} stack quality next to a match day.</span>{" "}
+              <span className="text-orange-800">
+                A match is a Z3–Z5 quality stress — needs Rest both sides. e.g. W{matchAdjacencyIssues[0].week} {matchAdjacencyIssues[0].matchDay} match next to {matchAdjacencyIssues[0].conflicts.map(c => `${c.day}=${c.session}`).join(", ")}{matchAdjacencyIssues.length > 1 ? ` (+${matchAdjacencyIssues.length - 1} more)` : ""}.
+              </span>
+            </div>
+            <button
+              onClick={refreshMatchWeeks}
+              className="text-xs font-semibold bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded-lg transition w-full sm:w-auto whitespace-nowrap"
+              title="Restore affected match weeks to current defaults (rest flanks). Other weeks untouched."
+            >
+              Fix match weeks
             </button>
           </div>
         </div>
