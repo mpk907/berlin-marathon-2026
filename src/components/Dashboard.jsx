@@ -690,14 +690,18 @@ export default function Dashboard() {
 
   const [disruptedReason, setDisruptedReason] = useState("");
   const [showDisruptedDialog, setShowDisruptedDialog] = useState(false);
-  const markWeekDisrupted = useCallback(() => {
+  const markWeekDisrupted = useCallback((mode = "gentle") => {
     const reason = disruptedReason.trim() || "unplanned ease";
+    const fullRest = mode === "full";
     const oldPlan = [...trainingPlan];
-    const newPlan = convertWeekToDisrupted(trainingPlan, currentWeek, reason);
+    const newPlan = convertWeekToDisrupted(trainingPlan, currentWeek, reason, { fullRest });
     if (undoState?.timeout) clearTimeout(undoState.timeout);
     const timeout = setTimeout(() => setUndoState(null), 8000);
-    setUndoState({ plan: oldPlan, timeout, kind: "coach", label: `W${currentWeek} → disrupted (${reason})` });
-    savePlan(newPlan, `mark W${currentWeek} disrupted: ${reason}`);
+    const label = fullRest
+      ? `W${currentWeek} → full rest (${reason})`
+      : `W${currentWeek} → disrupted (${reason})`;
+    setUndoState({ plan: oldPlan, timeout, kind: "coach", label });
+    savePlan(newPlan, `mark W${currentWeek} disrupted${fullRest ? " (full rest)" : ""}: ${reason}`);
     setShowDisruptedDialog(false);
     setDisruptedReason("");
   }, [trainingPlan, currentWeek, disruptedReason, savePlan, undoState]);
@@ -1731,10 +1735,10 @@ export default function Dashboard() {
                 ) : (
                   <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-lg">
                     <p className="text-sm font-medium text-amber-900 mb-2">
-                      Convert W{currentWeek} to a disrupted/recovery shape?
+                      Convert W{currentWeek} to a disrupted shape?
                     </p>
                     <p className="text-xs text-amber-800 mb-3">
-                      Every run becomes Rest, Sunday becomes a 60 %-distance easy shakeout (5–8 km). Match days stay. Marathon goal and the rest of the plan are not touched. Reversible via undo toast.
+                      Match and ✈️ Travel days always stay. Marathon goal and other weeks untouched. Reversible via undo toast.
                     </p>
                     <input
                       type="text"
@@ -1743,16 +1747,22 @@ export default function Dashboard() {
                       placeholder="Reason (optional, e.g. sick + holiday padel)"
                       className="w-full text-sm border border-amber-300 bg-white rounded-md px-2 py-1.5 mb-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2">
                       <button
-                        onClick={markWeekDisrupted}
-                        className="text-xs font-semibold bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700"
+                        onClick={() => markWeekDisrupted("gentle")}
+                        className="text-xs font-semibold bg-amber-600 text-white px-3 py-2 rounded-lg hover:bg-amber-700 text-left"
                       >
-                        Yes, convert W{currentWeek}
+                        Gentle <span className="font-normal text-amber-100">— Mon-Sat Rest, Sunday 5-8 km easy shakeout</span>
+                      </button>
+                      <button
+                        onClick={() => markWeekDisrupted("full")}
+                        className="text-xs font-semibold bg-slate-700 text-white px-3 py-2 rounded-lg hover:bg-slate-800 text-left"
+                      >
+                        Full rest <span className="font-normal text-slate-300">— every run including Sunday → Rest (use when you also skipped Sunday)</span>
                       </button>
                       <button
                         onClick={() => { setShowDisruptedDialog(false); setDisruptedReason(""); }}
-                        className="text-xs text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-100"
+                        className="text-xs text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-100 self-end"
                       >
                         Cancel
                       </button>
