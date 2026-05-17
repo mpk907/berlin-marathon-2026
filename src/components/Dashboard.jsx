@@ -19,7 +19,7 @@ import {
   DEFAULT_TARGET_PACE_SEC,
 } from "@/lib/projection";
 import { computeCoachInsights } from "@/lib/coach";
-import { findObsoletePaces, migrateObsoletePaces, findMatchAdjacencyIssues, migrateMatchAdjacency } from "@/lib/plan-migration";
+import { findObsoletePaces, migrateObsoletePaces, findMatchAdjacencyIssues, migrateMatchAdjacency, convertWeekToDisrupted } from "@/lib/plan-migration";
 
 const GOAL_PACE_STORAGE_KEY = "berlin2026:goalPaceSec";
 
@@ -687,6 +687,20 @@ export default function Dashboard() {
     const migrated = migrateMatchAdjacency(trainingPlan, staticTrainingPlan);
     savePlan(migrated, `restore ${matchAdjacencyIssues.length} match-week${matchAdjacencyIssues.length === 1 ? "" : "s"} to default (rest flanks)`);
   }, [trainingPlan, savePlan, matchAdjacencyIssues.length]);
+
+  const [disruptedReason, setDisruptedReason] = useState("");
+  const [showDisruptedDialog, setShowDisruptedDialog] = useState(false);
+  const markWeekDisrupted = useCallback(() => {
+    const reason = disruptedReason.trim() || "unplanned ease";
+    const oldPlan = [...trainingPlan];
+    const newPlan = convertWeekToDisrupted(trainingPlan, currentWeek, reason);
+    if (undoState?.timeout) clearTimeout(undoState.timeout);
+    const timeout = setTimeout(() => setUndoState(null), 8000);
+    setUndoState({ plan: oldPlan, timeout, kind: "coach", label: `W${currentWeek} → disrupted (${reason})` });
+    savePlan(newPlan, `mark W${currentWeek} disrupted: ${reason}`);
+    setShowDisruptedDialog(false);
+    setDisruptedReason("");
+  }, [trainingPlan, currentWeek, disruptedReason, savePlan, undoState]);
 
   const coachInsights = useMemo(() => computeCoachInsights({
     weeklyData,
@@ -1697,6 +1711,52 @@ export default function Dashboard() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+
+              {/* Disrupted-week shortcut */}
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                {!showDisruptedDialog ? (
+                  <button
+                    onClick={() => setShowDisruptedDialog(true)}
+                    className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-amber-50 transition group"
+                  >
+                    <span className="text-base">🤒</span>
+                    <span className="flex-1 text-sm">
+                      <span className="font-medium text-slate-700">Mark this week as disrupted</span>
+                      <span className="block text-xs text-slate-400 mt-0.5">Sick, travel, life — converts W{currentWeek} to rest + gentle Sunday shakeout. Match days stay. Undoable.</span>
+                    </span>
+                  </button>
+                ) : (
+                  <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-sm font-medium text-amber-900 mb-2">
+                      Convert W{currentWeek} to a disrupted/recovery shape?
+                    </p>
+                    <p className="text-xs text-amber-800 mb-3">
+                      Every run becomes Rest, Sunday becomes a 60 %-distance easy shakeout (5–8 km). Match days stay. Marathon goal and the rest of the plan are not touched. Reversible via undo toast.
+                    </p>
+                    <input
+                      type="text"
+                      value={disruptedReason}
+                      onChange={(e) => setDisruptedReason(e.target.value)}
+                      placeholder="Reason (optional, e.g. sick + holiday padel)"
+                      className="w-full text-sm border border-amber-300 bg-white rounded-md px-2 py-1.5 mb-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={markWeekDisrupted}
+                        className="text-xs font-semibold bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700"
+                      >
+                        Yes, convert W{currentWeek}
+                      </button>
+                      <button
+                        onClick={() => { setShowDisruptedDialog(false); setDisruptedReason(""); }}
+                        className="text-xs text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
