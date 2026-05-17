@@ -68,11 +68,68 @@ export function findObsoletePaces(savedPlan, defaultPlan) {
 }
 
 /**
- * Detects weeks where a Match day has a Quality session adjacent (day before
- * or after) — this is a hard coaching rule violation: match = Z3-Z5 quality
- * stress, can't stack with another quality without 48h+ recovery.
+ * Convert a single week to a "disrupted recovery" shape: all run sessions
+ * become Rest except Sunday, which is preserved as a gentle ~60% shakeout
+ * of the planned distance (capped at 8 km, floored at 5 km). Match days
+ * stay — they're external commitments. Notes get an explanatory suffix.
  *
- * Returns [{ week, matchDay, conflict: { day, session } }] for each violation.
+ * Use case: user got sick, travelled, or otherwise couldn't train this
+ * week. Resets the week without trashing the rest of the plan.
+ */
+export function convertWeekToDisrupted(savedPlan, weekNum, reason = "disrupted") {
+  if (!Array.isArray(savedPlan)) return savedPlan;
+  return savedPlan.map(w => {
+    if (w.week !== weekNum) return w;
+
+    const newDetail = {};
+    const out = { ...w };
+
+    for (const day of DAYS) {
+      const session = w[day];
+      const isMatch = isMatchSession(session);
+      const isTravel = typeof session === "string" && session.includes("✈️");
+
+      if (isMatch || isTravel) {
+        out[day] = session;
+        if (w.detail?.[day]) newDetail[day] = w.detail[day];
+        continue;
+      }
+
+      if (day === "sun") {
+        // Sunday: gentle shakeout ~60% of planned Sun km, capped 5-8 km
+        const plannedSunKm = (() => {
+          const m = typeof session === "string" ? session.match(/^(\d+\.?\d*)/) : null;
+          return m ? parseFloat(m[1]) : 0;
+        })();
+        if (plannedSunKm > 0) {
+          const shakeout = Math.max(5, Math.min(8, Math.round(plannedSunKm * 0.6)));
+          out.sun = `${shakeout} easy`;
+          newDetail.sun = {
+            km: shakeout,
+            type: "easy",
+            hr: "Z1-Z2 < 146",
+            pace: "8:00+ very easy (return-to-running after disrupted week)",
+          };
+        } else {
+          out.sun = "Rest";
+        }
+        continue;
+      }
+
+      out[day] = "Rest";
+    }
+
+    out.detail = newDetail;
+    const baseNotes = (w.notes || "").replace(/\s*·\s*disrupted.*$/i, "").trim();
+    out.notes = baseNotes ? `${baseNotes} · disrupted (${reason})` : `disrupted (${reason})`;
+    return out;
+  });
+}
+
+/**
+ * Detects weeks where a Match day has a Quality session adjacent (day before
+ * or after) — match = Z3-Z5 stress, can't stack with quality without 48h+
+ * recovery. Returns [{ week, matchDay, conflicts: [{day, session}] }].
  */
 export function findMatchAdjacencyIssues(savedPlan) {
   const issues = [];
