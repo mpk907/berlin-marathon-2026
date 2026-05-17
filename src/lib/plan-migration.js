@@ -68,15 +68,18 @@ export function findObsoletePaces(savedPlan, defaultPlan) {
 }
 
 /**
- * Convert a single week to a "disrupted recovery" shape: all run sessions
- * become Rest except Sunday, which is preserved as a gentle ~60% shakeout
- * of the planned distance (capped at 8 km, floored at 5 km). Match days
- * stay — they're external commitments. Notes get an explanatory suffix.
+ * Convert a single week to a "disrupted recovery" shape.
  *
- * Use case: user got sick, travelled, or otherwise couldn't train this
- * week. Resets the week without trashing the rest of the plan.
+ * Modes:
+ *   - default (gentle): every run → Rest except Sunday, which becomes a
+ *     gentle ~60 % shakeout of the planned Sun km (clamped 5-8 km).
+ *   - fullRest: every run including Sunday → Rest. Use when even the
+ *     return-to-running shakeout didn't happen.
+ *
+ * Match days and ✈️ Travel days are always preserved (external commitments).
+ * Week notes get a "· disrupted (reason)" suffix.
  */
-export function convertWeekToDisrupted(savedPlan, weekNum, reason = "disrupted") {
+export function convertWeekToDisrupted(savedPlan, weekNum, reason = "disrupted", { fullRest = false } = {}) {
   if (!Array.isArray(savedPlan)) return savedPlan;
   return savedPlan.map(w => {
     if (w.week !== weekNum) return w;
@@ -95,8 +98,7 @@ export function convertWeekToDisrupted(savedPlan, weekNum, reason = "disrupted")
         continue;
       }
 
-      if (day === "sun") {
-        // Sunday: gentle shakeout ~60% of planned Sun km, capped 5-8 km
+      if (day === "sun" && !fullRest) {
         const plannedSunKm = (() => {
           const m = typeof session === "string" ? session.match(/^(\d+\.?\d*)/) : null;
           return m ? parseFloat(m[1]) : 0;
@@ -121,7 +123,8 @@ export function convertWeekToDisrupted(savedPlan, weekNum, reason = "disrupted")
 
     out.detail = newDetail;
     const baseNotes = (w.notes || "").replace(/\s*·\s*disrupted.*$/i, "").trim();
-    out.notes = baseNotes ? `${baseNotes} · disrupted (${reason})` : `disrupted (${reason})`;
+    const modeTag = fullRest ? ` (full rest, ${reason})` : ` (${reason})`;
+    out.notes = baseNotes ? `${baseNotes} · disrupted${modeTag}` : `disrupted${modeTag}`;
     return out;
   });
 }
